@@ -1,0 +1,247 @@
+import React, { useContext, useState, useEffect } from 'react';
+import { 
+    Users, MessageSquare, Settings, Globe, LogOut, ChevronRight, Copy, Check, 
+    Bot, Headphones, User, Clock, ExternalLink, Mail, Camera, Edit3, Key, 
+    Wallet, AlertTriangle, Save, Shield 
+} from 'lucide-react';
+import { AppContext } from '../context/AppContext';
+import { AVAILABLE_LANGUAGES } from '../locales';
+import { supabase } from '../lib/supabase';
+import { Button } from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
+import { TeamDashboard } from './TeamDashboard';
+import { SupportChat } from '../components/support/SupportChat';
+
+export const MenuView = ({ navigate, initialTab = 'menu' }) => {
+    const { state, setState, addNotification, changeLanguage, t, resetAppData } = useContext(AppContext);
+    const [subTab, setSubTab] = useState(initialTab);
+    const [newUsername, setNewUsername] = useState('');
+    const [usernameToken, setUsernameToken] = useState('');
+    const [loginPwd, setLoginPwd] = useState('');
+    const [financialPwd, setFinancialPwd] = useState('');
+    const [wallets, setWallets] = useState(state.user.wallets);
+    const [walletToken, setWalletToken] = useState('');
+    const [supportMode, setSupportMode] = useState('main');
+    const [sponsorName, setSponsorName] = useState('Carregando...');
+
+    useEffect(() => {
+        setSubTab(initialTab);
+    }, [initialTab]);
+
+    // Fetch sponsor username on mount
+    useEffect(() => {
+        const fetchSponsor = async () => {
+            if (state.user.sponsor_id) {
+                try {
+                    const { data, error } = await supabase
+                        .from('profiles')
+                        .select('username')
+                        .eq('id', state.user.sponsor_id)
+                        .single();
+                    
+                    if (data && data.username) {
+                        setSponsorName(data.username);
+                    }
+                } catch (err) {
+                    console.error("Erro ao buscar patrocinador:", err);
+                }
+            }
+        };
+        fetchSponsor();
+    }, [state.user.sponsor_id]);
+
+    const updateUserField = (field, value) => {
+        setState(prev => ({ ...prev, user: { ...prev.user, [field]: value } }));
+    };
+
+    const handleSaveWallets = () => {
+        if (!walletToken) { alert('Por segurança, insira o token enviado ao seu e-mail.'); return; }
+        updateUserField('wallets', wallets);
+        addNotification('Carteiras atualizadas com sucesso!', 'success');
+        setWalletToken('');
+    };
+
+    const handleSaveUsername = () => {
+        if (!usernameToken || !newUsername) { alert('Preencha o novo username e o token.'); return; }
+        updateUserField('username', newUsername);
+        addNotification('Username alterado com sucesso!', 'success');
+        setNewUsername(''); setUsernameToken('');
+    };
+
+    const handleUpdateLoginPassword = async () => {
+        if (!loginPwd || loginPwd.length < 6) {
+            addNotification('A senha deve ter no mínimo 6 caracteres.', 'danger');
+            return;
+        }
+
+        try {
+            const { error } = await supabase.auth.updateUser({ password: loginPwd });
+            if (error) throw error;
+            
+            addNotification(t('menu.loginPwdSuccess') || 'Senha atualizada!', 'success');
+            setLoginPwd('');
+        } catch (error) {
+            console.error('Erro ao atualizar senha:', error);
+            addNotification('Erro ao atualizar senha: ' + error.message, 'danger');
+        }
+    };
+
+    const handleSaveFinancialPwd = () => {
+        if (!financialPwd) return;
+        updateUserField('financialPassword', financialPwd);
+        addNotification('Senha financeira definida!', 'success');
+        setFinancialPwd('');
+    };
+
+    if (subTab === 'team') {
+        return <TeamDashboard onBack={() => setSubTab('menu')} />;
+    }
+
+    if (subTab === 'language') {
+        return (
+            <div className="px-4 pb-24 animate-fadeIn">
+                <Button onClick={() => setSubTab('menu')} variant="secondary" className="mb-4 text-xs py-2 flex items-center gap-2"><ChevronRight className="rotate-180" size={16}/> {t('menu.back')}</Button>
+                <h2 className="text-xl font-bold text-white mb-6">{t('menu.language')}</h2>
+                <div className="space-y-2">{AVAILABLE_LANGUAGES.map((lang) => (<button key={lang.code} onClick={() => changeLanguage(lang.code)} className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all ${state.user.language === lang.code ? 'bg-purple-900/30 border-purple-500 text-white' : 'bg-gray-900 border-gray-800 text-gray-400 hover:bg-gray-800'}`}><span className="flex items-center gap-3"><span className="text-2xl">{lang.flag}</span><span className="font-bold text-sm">{lang.name}</span></span>{state.user.language === lang.code && <Check size={18} className="text-purple-400" />}</button>))}</div>
+            </div>
+        );
+    }
+
+    if (subTab === 'support') {
+        return (
+            <div className="px-4 pb-24 animate-fadeIn">
+                <Button onClick={() => { if(supportMode === 'main') setSubTab('menu'); else setSupportMode('main'); }} variant="secondary" className="mb-4 text-xs py-2 flex items-center gap-2"><ChevronRight className="rotate-180" size={16}/> {supportMode === 'main' ? t('menu.title') : t('menu.helpCenterTitle')}</Button>
+                {supportMode === 'main' && (<div className="space-y-6"><h2 className="text-xl font-bold text-white mb-4">{t('menu.helpCenterTitle')}</h2><button onClick={() => setSupportMode('ai')} className="w-full bg-gradient-to-r from-blue-900 to-blue-800 p-6 rounded-xl border border-blue-500 flex flex-col items-center gap-3 active:scale-95 transition"><Bot size={48} className="text-blue-300"/><div className="text-center"><h3 className="text-white font-bold text-lg">{t('menu.supportAI')}</h3><p className="text-blue-200 text-xs mt-1">{t('menu.automaticSupportDesc')}</p></div></button><button onClick={() => setSupportMode('chat')} className="w-full bg-gradient-to-r from-purple-900 to-purple-800 p-6 rounded-xl border border-purple-500 flex flex-col items-center gap-3 active:scale-95 transition"><Headphones size={48} className="text-purple-300"/><div className="text-center"><h3 className="text-white font-bold text-lg">{t('menu.talkToAgentTitle')}</h3><p className="text-purple-200 text-xs mt-1">{t('menu.talkToAgentDesc')}</p></div></button></div>)}
+                {supportMode === 'ai' && (<div className="space-y-4"><h2 className="text-lg font-bold text-white flex items-center gap-2"><Bot size={20}/> {t('menu.faqTitle')}</h2>{[{ q: t('menu.howToDepositQ'), a: t('menu.howToDepositA') },{ q: t('menu.howWithdrawalsWorkQ'), a: t('menu.howWithdrawalsWorkA') },{ q: t('menu.standardPlanReturnQ'), a: t('menu.standardPlanReturnA') },{ q: t('menu.premiumPlanDetailsQ'), a: t('menu.premiumPlanDetailsA') },].map((item, idx) => (<details key={idx} className="bg-gray-900 rounded-lg overflow-hidden border border-gray-800 group"><summary className="p-4 cursor-pointer font-bold text-sm text-gray-200 flex justify-between items-center group-open:text-purple-400">{item.q}<ChevronRight size={16} className="group-open:rotate-90 transition"/></summary><div className="p-4 pt-0 text-xs text-gray-400 leading-relaxed border-t border-gray-800 mt-2">{item.a}</div></details>))}</div>)}
+                {supportMode === 'chat' && <SupportChat />}
+            </div>
+        );
+    }
+
+    if (subTab === 'config') {
+        return (
+            <div className="px-4 pb-24 animate-fadeIn">
+                 <Button onClick={() => setSubTab('menu')} variant="secondary" className="mb-4 text-xs py-2 flex items-center gap-2"><ChevronRight className="rotate-180" size={16}/> {t('menu.back')}</Button>
+                 <h2 className="text-xl font-bold text-white mb-6">{t('menu.settings')}</h2>
+                 <div className="space-y-6">
+                    <div className="flex items-center gap-4 bg-gray-900 p-4 rounded-xl border border-gray-800">
+                        <div className="relative group cursor-pointer" onClick={() => alert('Abrir galeria de avatares...')}>
+                            <div className="w-16 h-16 bg-gray-700 rounded-full overflow-hidden border-2 border-purple-500">
+                                <User size={40} className="text-gray-400 m-auto mt-2"/>
+                            </div>
+                            <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                                <Camera size={20} className="text-white"/>
+                            </div>
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="text-white font-bold text-lg">{state.user.username}</h3>
+                            <p className="text-gray-400 text-xs flex items-center gap-1 mb-1"><Mail size={12}/> {state.user.email}</p>
+                            <p className="text-purple-400 text-xs font-bold flex items-center gap-1 bg-purple-900/20 px-2 py-1 rounded w-fit">
+                                <Users size={12}/> {t('menu.yourSponsor')}: {sponsorName}
+                            </p>
+                        </div>
+                    </div>
+                    <Card><h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><Edit3 size={16} className="text-purple-400"/> {t('menu.changeUsername')}</h4><div className="space-y-2"><input type="text" placeholder={t('menu.newUsername')} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white" value={newUsername} onChange={(e) => setNewUsername(e.target.value)}/><div className="flex gap-2"><input type="text" placeholder={t('menu.tokenPlaceholder')} className="flex-1 bg-black border border-gray-700 rounded p-2 text-xs text-white" value={usernameToken} onChange={(e) => setUsernameToken(e.target.value)}/><button onClick={() => addNotification('Token enviado para ' + state.user.email, 'success')} className="bg-gray-800 text-xs px-3 rounded text-gray-300 whitespace-nowrap">{t('menu.requestToken')}</button></div><Button onClick={handleSaveUsername} className="w-full text-xs py-2 mt-2">{t('menu.updateUsername')}</Button></div></Card>
+                    <Card>
+                        <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                            <Key size={16} className="text-blue-400"/> {t('menu.changeLoginPwd')}
+                        </h4>
+                        <input 
+                            type="password" 
+                            placeholder={t('menu.newLoginPwd')} 
+                            className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white mb-2" 
+                            value={loginPwd} 
+                            onChange={(e) => setLoginPwd(e.target.value)}
+                        />
+                        <Button onClick={handleUpdateLoginPassword} className="w-full text-xs py-2 bg-blue-600 hover:bg-blue-700">
+                            {t('menu.updateLoginPwd')}
+                        </Button>
+                    </Card>
+                    <Card><h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><Key size={16} className="text-yellow-400"/> {t('menu.financialPwd')}</h4><input type="password" placeholder={t('menu.newFinancialPwd')} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white mb-2" value={financialPwd} onChange={(e) => setFinancialPwd(e.target.value)}/><Button onClick={handleSaveFinancialPwd} className="w-full text-xs py-2">{t('menu.setPwd')}</Button></Card>
+                    <Card className="border-green-900"><h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Wallet size={16} className="text-green-400"/> {t('menu.withdrawalWallets')}</h4><div className="space-y-3">{[{ k: 'usdt_bep20', l: 'USDT (BEP-20)' },{ k: 'usdt_polygon', l: 'USDT (Polygon)' },{ k: 'usdt_trc20', l: 'USDT (TRC-20)' },{ k: 'usdt_arbitrum', l: 'USDT (Arbitrum)' },{ k: 'usdc_arbitrum', l: 'USDC (Arbitrum)' },{ k: 'pix', l: 'Chave PIX' }].map((w) => (<div key={w.k}><label className="text-[10px] text-gray-500 uppercase">{w.l}</label><input type="text" placeholder={`Endereço ${w.l}`} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white focus:border-green-500 transition-colors" value={wallets[w.k]} onChange={(e) => setWallets({...wallets, [w.k]: e.target.value})}/></div>))}<div className="bg-yellow-900/20 p-3 rounded border border-yellow-900/50 mt-4"><div className="flex items-start gap-2 mb-2"><AlertTriangle size={16} className="text-yellow-500 shrink-0 mt-0.5"/><p className="text-[10px] text-yellow-200 leading-tight">{t('menu.walletSecurityWarning')}</p></div><div className="flex gap-2"><input type="text" placeholder={t('menu.securityToken')} className="flex-1 bg-black border border-yellow-700 rounded p-2 text-xs text-white" value={walletToken} onChange={(e) => setWalletToken(e.target.value)}/><button onClick={() => addNotification('Token de segurança enviado!', 'success')} className="bg-yellow-700 text-black font-bold text-xs px-3 rounded hover:bg-yellow-600 whitespace-nowrap">{t('menu.request')}</button></div></div><Button onClick={handleSaveWallets} variant="success" className="w-full text-xs py-3 flex items-center justify-center gap-2"><Save size={16}/> {t('menu.saveWallets')}</Button></div></Card>
+                 </div>
+            </div>
+        )
+    }
+
+    return (
+        <div className="px-4 pb-24 animate-fadeIn">
+            <h2 className="text-2xl font-bold text-white mb-6 mt-4">{t('menu.title')}</h2>
+            
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6">
+                <p className="text-gray-400 text-xs font-bold uppercase mb-2 flex items-center gap-2">
+                    <ExternalLink size={12} className="text-purple-400"/> {t('menu.inviteLink')}
+                </p>
+                <div className="flex items-center gap-2 bg-black rounded p-2 border border-gray-700">
+                    <code className="text-xs text-green-400 flex-1 truncate">
+                        https://miningpoints.com/ref/{state.user.username}
+                    </code>
+                    <button 
+                        onClick={() => {
+                            navigator.clipboard.writeText(`https://miningpoints.com/ref/${state.user.username}`);
+                            addNotification(t('menu.linkCopied'), 'success');
+                        }}
+                        className="text-gray-400 hover:text-white transition"
+                    >
+                        <Copy size={16} />
+                    </button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-6">
+                <button onClick={() => setSubTab('team')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Users className="text-purple-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.team')}</span></button>
+                <button onClick={() => setSubTab('support')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><MessageSquare className="text-blue-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.supportAI')}</span></button>
+                <button onClick={() => setSubTab('config')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Settings className="text-gray-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.settings')}</span></button>
+                <button onClick={() => setSubTab('language')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Globe className="text-green-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.language')}</span></button>
+            </div>
+
+            {/* Acesso Admin (Apenas para Master, Finance e Sócios) */}
+            {(state.user.role === 'admin_master' || state.user.role === 'admin_finance' || state.user.role === 'admin_partner') && (
+                <div className="mb-6">
+                    <Button onClick={() => navigate('admin')} className="w-full bg-red-900/20 text-red-400 border border-red-900/50 hover:bg-red-900/40">
+                        <Shield size={16} className="mr-2" /> {state.user.role === 'admin_partner' ? 'Painel Sócios' : 'Painel Admin'}
+                    </Button>
+                </div>
+            )}
+
+            <div className="bg-gray-900 rounded-xl p-4">
+                <h3 className="text-white text-sm mb-3">{t('menu.langPrefs')}</h3>
+                <div className="flex gap-2">
+                    {[
+                        { label: 'US', code: 'en' },
+                        { label: 'BR', code: 'pt-BR' },
+                        { label: 'ES', code: 'es' }
+                    ].map(lang => {
+                        const isActive = state.user.language === lang.code;
+                        return (
+                            <button
+                                key={lang.code}
+                                onClick={() => changeLanguage(lang.code)}
+                                className={`flex-1 py-2 rounded text-xs transition-all border 
+                                    ${isActive 
+                                        ? 'bg-green-900/40 border-green-400 text-green-300 shadow-[0_0_12px_rgba(34,197,94,0.9)]' 
+                                        : 'bg-black border-gray-700 text-gray-400 hover:border-purple-500 hover:text-white'
+                                    }`}
+                            >
+                                {lang.label}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+            <Button 
+                onClick={async () => { 
+                    if(window.confirm(t('menu.logout') + '?')) { 
+                        await supabase.auth.signOut();
+                        localStorage.removeItem('mining_points_mvp_v1'); 
+                        window.location.href = '/'; // Redireciona para a raiz limpando estado
+                    }
+                }} 
+                variant="secondary" 
+                className="w-full mt-6 flex items-center justify-center gap-2 text-red-400 border-red-900 hover:bg-red-900/20"
+            >
+                <LogOut size={16}/> {t('menu.logout')}
+            </Button>
+        </div>
+    );
+};
