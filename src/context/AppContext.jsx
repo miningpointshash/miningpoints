@@ -277,38 +277,53 @@ export const AppProvider = ({ children }) => {
     setIsProcessingCycle(true);
 
     try {
-        const { data: payoutAmount, error } = await supabase.rpc('process_mining_cycle');
-        
-        if (error) throw error;
+        const { data: { session } } = await supabase.auth.getSession();
+        const userId = session?.user?.id;
+        if (!userId) return;
 
-        if (payoutAmount > 0) {
-            // Atualiza estado local com o valor retornado
-            setState(prev => ({
-                ...prev,
-                wallet: {
-                    ...prev.wallet,
-                    usd: prev.wallet.usd + payoutAmount, // Legado visual
-                    balance_usd: (prev.wallet.balance_usd || 0) + payoutAmount,
-                    totalEarnings: prev.wallet.totalEarnings + payoutAmount
+        const beforeTotal = state.wallet.totalEarnings || 0;
+
+        const { error: cycleError } = await supabase.rpc('process_mining_cycle');
+        if (cycleError) throw cycleError;
+
+        const { data: walletData, error: walletError } = await supabase
+            .from('wallets')
+            .select('balance_usd, balance_frozen_usd, total_deposited_usd, total_withdrawn_usd, total_earnings_usd')
+            .eq('user_id', userId)
+            .single();
+
+        if (walletError) throw walletError;
+
+        const newTotal = walletData?.total_earnings_usd || 0;
+        const delta = Math.max(0, newTotal - beforeTotal);
+
+        setState(prev => ({
+            ...prev,
+            wallet: {
+                ...prev.wallet,
+                usd: walletData?.balance_usd || 0,
+                balance_usd: walletData?.balance_usd || 0,
+                balance_frozen_usd: walletData?.balance_frozen_usd || 0,
+                deposited: walletData?.total_deposited_usd || 0,
+                withdrawn: walletData?.total_withdrawn_usd || 0,
+                totalEarnings: newTotal
+            },
+            miningHistory: delta > 0 ? [
+                {
+                    id: Date.now(),
+                    time: new Date().toISOString(),
+                    details: [{
+                        profit: delta,
+                        hash: `BLOCK-${Math.floor(Date.now() / 900000)}`,
+                        status: 'profit'
+                    }]
                 },
-                miningHistory: [
-                    {
-                        id: Date.now(),
-                        time: new Date().toISOString(),
-                        details: [{
-                            profit: payoutAmount,
-                            hash: `BLOCK-${Math.floor(Date.now() / 900000)}`,
-                            status: 'profit'
-                        }]
-                    },
-                    ...prev.miningHistory
-                ].slice(0, 50)
-            }));
-            
-            addNotification(`Ciclo Finalizado: +$${payoutAmount.toFixed(4)} creditado.`, 'profit');
-        } else {
-             // Se não houve pagamento (ex: usuário novo sem plano), apenas notifica ciclo
-             // Opcional: não notificar nada para não poluir
+                ...prev.miningHistory
+            ].slice(0, 50) : prev.miningHistory
+        }));
+
+        if (delta > 0) {
+            addNotification(`Ciclo Finalizado: +$${delta.toFixed(4)} creditado.`, 'profit');
         }
 
     } catch (err) {
