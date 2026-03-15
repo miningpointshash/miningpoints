@@ -218,7 +218,8 @@ export const AppProvider = ({ children }) => {
                         balance_usd: wallet ? (wallet.balance_usd || 0) : 0, 
                         balance_frozen_usd: wallet ? (wallet.balance_frozen_usd || 0) : 0,
                         deposited: wallet ? (wallet.total_deposited_usd || 0) : prev.wallet.deposited,
-                        withdrawn: wallet ? (wallet.total_withdrawn_usd || 0) : prev.wallet.withdrawn
+                        withdrawn: wallet ? (wallet.total_withdrawn_usd || 0) : prev.wallet.withdrawn,
+                        totalEarnings: wallet ? (wallet.total_earnings_usd || 0) : prev.wallet.totalEarnings
                  },
                  plans: mappedPlans
              }));
@@ -248,6 +249,7 @@ export const AppProvider = ({ children }) => {
   const [miningTimer, setMiningTimer] = useState(900); 
   const [miningStatus, setMiningStatus] = useState('searching'); 
   const [popup, setPopup] = useState(null);
+  const [isProcessingCycle, setIsProcessingCycle] = useState(false);
 
   // Persistência
   useEffect(() => {
@@ -269,179 +271,83 @@ export const AppProvider = ({ children }) => {
     setTimeout(() => setPopup(null), 3000);
   };
 
-  const processMiningPayout = () => {
-    if (state.plans.length === 0) return;
+  // Processa o ciclo de mineração via RPC (Backend Sincronizado)
+  const processGlobalCycle = async () => {
+    if (isProcessingCycle) return;
+    setIsProcessingCycle(true);
 
-    let cycleProfit = 0;
-    const newHistoryEntry = {
-      id: Date.now(),
-      time: new Date().toISOString(),
-      details: []
-    };
-
-    const updatedPlans = state.plans.map(plan => {
-      if (!plan.active) return plan;
-      
-      const dailyRate = plan.type === 'standard' ? 0.01 : 0.013;
-      const baseCycleReturn = (plan.amount * dailyRate) / 96; 
-      
-      const variation = (Math.random() * 0.25) - 0.10;
-      const actualReturn = baseCycleReturn * (1 + variation);
-      
-      cycleProfit += actualReturn;
-      
-      newHistoryEntry.details.push({
-        planId: plan.id,
-        profit: actualReturn,
-        hash: `HASH-${Math.floor(Math.random()*9999)}`,
-        status: actualReturn > 0 ? 'profit' : 'loss' 
-      });
-
-      return plan;
-    });
-
-    if (cycleProfit > 0) {
-      // Persistir no Supabase (Assíncrono para não travar UI)
-      supabase.rpc('credit_mining_profit', { profit_amount: cycleProfit })
-        .then(({ error }) => {
-            if (error) console.error("Erro ao salvar lucro de mineração:", error);
-        });
-
-      addNotification(`Rendimento Hash: +$${cycleProfit.toFixed(4)} creditado.`, 'profit');
-      
-      if (Math.random() > 0.8) { 
-          const teamBonus = cycleProfit * 0.05;
-          addNotification(`Bônus de Equipe: +$${teamBonus.toFixed(4)} recebido.`, 'team');
-          cycleProfit += teamBonus;
-      }
-
-      setState(prev => ({
-        ...prev,
-        wallet: {
-          ...prev.wallet,
-          usd: prev.wallet.usd + cycleProfit,
-          totalEarnings: prev.wallet.totalEarnings + cycleProfit
-        },
-        miningHistory: [newHistoryEntry, ...prev.miningHistory].slice(0, 50)
-      }));
-    }
-  };
-
-  const syncMiningFromMeta = () => {
     try {
-      const raw = localStorage.getItem(MINING_META_KEY);
-      if (!raw) {
-        const initialMeta = { timer: 900, lastUpdate: new Date().toISOString() };
-        localStorage.setItem(MINING_META_KEY, JSON.stringify(initialMeta));
-        setMiningTimer(900);
-        return;
-      }
+        const { data: payoutAmount, error } = await supabase.rpc('process_mining_cycle');
+        
+        if (error) throw error;
 
-      const meta = JSON.parse(raw);
-      if (!meta || typeof meta.timer !== 'number' || !meta.lastUpdate) {
-        throw new Error('invalid meta');
-      }
-
-      const last = new Date(meta.lastUpdate).getTime();
-      const now = Date.now();
-      if (Number.isNaN(last)) throw new Error('invalid date');
-
-      const delta = Math.max(0, Math.floor((now - last) / 1000));
-      let timer = meta.timer;
-      let cyclesToRun = 0;
-
-      if (delta >= timer) {
-        const timeAfterFirst = delta - timer;
-        cyclesToRun = 1 + Math.floor(timeAfterFirst / 900);
-        const remainingAfterLast = timeAfterFirst % 900;
-        timer = 900 - remainingAfterLast;
-      } else {
-        timer = timer - delta;
-      }
-
-      timer = Math.max(1, Math.min(900, timer));
-
-      if (cyclesToRun > 0 && state.plans.some(p => p.active)) {
-        for (let i = 0; i < cyclesToRun; i++) {
-          processMiningPayout();
+        if (payoutAmount > 0) {
+            // Atualiza estado local com o valor retornado
+            setState(prev => ({
+                ...prev,
+                wallet: {
+                    ...prev.wallet,
+                    usd: prev.wallet.usd + payoutAmount, // Legado visual
+                    balance_usd: (prev.wallet.balance_usd || 0) + payoutAmount,
+                    totalEarnings: prev.wallet.totalEarnings + payoutAmount
+                },
+                miningHistory: [
+                    {
+                        id: Date.now(),
+                        time: new Date().toISOString(),
+                        details: [{
+                            profit: payoutAmount,
+                            hash: `BLOCK-${Math.floor(Date.now() / 900000)}`,
+                            status: 'profit'
+                        }]
+                    },
+                    ...prev.miningHistory
+                ].slice(0, 50)
+            }));
+            
+            addNotification(`Ciclo Finalizado: +$${payoutAmount.toFixed(4)} creditado.`, 'profit');
+        } else {
+             // Se não houve pagamento (ex: usuário novo sem plano), apenas notifica ciclo
+             // Opcional: não notificar nada para não poluir
         }
-      }
 
-      setMiningTimer(timer);
-      localStorage.setItem(
-        MINING_META_KEY,
-        JSON.stringify({ timer, lastUpdate: new Date().toISOString() })
-      );
-    } catch {
-      const resetMeta = { timer: 900, lastUpdate: new Date().toISOString() };
-      localStorage.setItem(MINING_META_KEY, JSON.stringify(resetMeta));
-      setMiningTimer(900);
+    } catch (err) {
+        console.error("Erro ao processar ciclo global:", err);
+    } finally {
+        setIsProcessingCycle(false);
     }
   };
 
+  // Timer Global Sincronizado (Epoch Time)
   useEffect(() => {
-    if (state.notifications.length === 0) {
-        addNotification("Bem-vindo ao MiningPoints! Se precisar de ajuda, acesse o Suporte.", "support");
-    }
-  }, []);
+    const syncTimer = () => {
+        const now = Math.floor(Date.now() / 1000);
+        const cycleDuration = 900; // 15 minutos
+        const elapsed = now % cycleDuration;
+        const remaining = cycleDuration - elapsed;
 
-  useEffect(() => {
-    syncMiningFromMeta();
-  }, []);
+        setMiningTimer(remaining);
 
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        syncMiningFromMeta();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
-
-  useEffect(() => {
-    const handleStorage = (event) => {
-      if (event.key === MINING_META_KEY) {
-        syncMiningFromMeta();
-      }
-    };
-
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
-
-  useEffect(() => {
-    const timerId = setInterval(() => {
-      setMiningTimer(prev => {
-        let next = prev;
-
-        if (prev <= 1) {
-          processMiningPayout();
-          next = 900;
-        } else {
-          next = prev - 1;
-        }
-
-        localStorage.setItem(
-          MINING_META_KEY,
-          JSON.stringify({ timer: next, lastUpdate: new Date().toISOString() })
-        );
-
-        const elapsedInCycle = 900 - next;
-        const cycleDuration = 60; // 5s + 5s + 50s
-        const phase = elapsedInCycle % cycleDuration;
-        
+        // Status Visual
+        const phase = elapsed % 60; // Ciclo visual curto de 60s para animação
         if (phase < 5) setMiningStatus('searching');
         else if (phase < 10) setMiningStatus('analyzing');
         else setMiningStatus('executing');
 
-        return next;
-      });
-    }, 1000);
+        // Gatilho de Fim de Ciclo (Margem de 2s para garantir)
+        if (remaining <= 2 && !isProcessingCycle) {
+            processGlobalCycle();
+        }
+    };
 
-    return () => clearInterval(timerId);
-  }, []);
+    syncTimer(); // Executa imediatamente
+    const interval = setInterval(syncTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, [isProcessingCycle]); // Dependência para evitar loop se processamento demorar
+
+  // Handlers de Visibilidade removidos pois o Timer agora é absoluto
+
 
   const markAllNotificationsRead = () => {
       setState(prev => ({
