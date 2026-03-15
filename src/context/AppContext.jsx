@@ -129,14 +129,16 @@ export const AppProvider = ({ children }) => {
                 return;
             }
 
-            // Busca perfil e carteira em paralelo
-            let [profileRes, walletRes] = await Promise.all([
+            // Busca perfil, carteira e planos em paralelo
+            let [profileRes, walletRes, plansRes] = await Promise.all([
                 supabase.from('profiles').select('*').eq('id', userId).single(),
-                supabase.from('wallets').select('*').eq('user_id', userId).single()
+                supabase.from('wallets').select('*').eq('user_id', userId).single(),
+                supabase.from('plans').select('*').eq('user_id', userId)
             ]);
 
             let profile = profileRes.data;
             let wallet = walletRes.data;
+            let dbPlans = plansRes.data || [];
 
             // Self-healing: Criar perfil se não existir (Correção para falta de Trigger)
             if (!profile && userId) {
@@ -185,6 +187,16 @@ export const AppProvider = ({ children }) => {
                     return;
                 }
 
+                // Converter dbPlans para o formato esperado pelo frontend
+                 const mappedPlans = dbPlans.map(p => ({
+                     id: p.id,
+                     type: p.type,
+                     amount: parseFloat(p.amount_invested),
+                     active: p.status === 'active',
+                     startDate: p.start_date,
+                     roi: 0
+                 }));
+
                 setState(prev => ({
                     ...prev,
                     user: {
@@ -207,8 +219,9 @@ export const AppProvider = ({ children }) => {
                         balance_frozen_usd: wallet ? (wallet.balance_frozen_usd || 0) : 0,
                         deposited: wallet ? (wallet.total_deposited_usd || 0) : prev.wallet.deposited,
                         withdrawn: wallet ? (wallet.total_withdrawn_usd || 0) : prev.wallet.withdrawn
-                    }
-                }));
+                 },
+                 plans: mappedPlans
+             }));
             }
         } catch (error) {
             console.error("Erro na sincronização Supabase:", error);
@@ -288,6 +301,12 @@ export const AppProvider = ({ children }) => {
     });
 
     if (cycleProfit > 0) {
+      // Persistir no Supabase (Assíncrono para não travar UI)
+      supabase.rpc('credit_mining_profit', { profit_amount: cycleProfit })
+        .then(({ error }) => {
+            if (error) console.error("Erro ao salvar lucro de mineração:", error);
+        });
+
       addNotification(`Rendimento Hash: +$${cycleProfit.toFixed(4)} creditado.`, 'profit');
       
       if (Math.random() > 0.8) { 
