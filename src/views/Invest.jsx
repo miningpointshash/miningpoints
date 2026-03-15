@@ -13,8 +13,9 @@ export const InvestView = ({ navigate }) => {
 
   // Calculate totals
   const totalInvested = state.plans.reduce((acc, p) => p.active ? acc + p.amount : acc, 0);
-  // Valor Disponível = Saldo Atual na Carteira (balance_usd)
-  const availableBalance = state.wallet.balance_usd || state.wallet.usd || 0;
+  const availableBalance = state.user.account_status === 'sponsored'
+    ? (state.wallet.balance_frozen_usd || 0)
+    : (state.wallet.balance_usd || state.wallet.usd || 0);
 
   const handleBuy = async (planType, min, max, valStr, setVal) => {
     const val = parseFloat(valStr);

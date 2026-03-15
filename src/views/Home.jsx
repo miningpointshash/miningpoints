@@ -11,6 +11,9 @@ export const HomeView = ({ navigate }) => {
   const { state, miningTimer, miningStatus, t } = useContext(AppContext);
   const totalInvested = state.plans.reduce((acc, p) => p.active ? acc + p.amount : acc, 0);
   const formattedTime = new Date(miningTimer * 1000).toISOString().substr(14, 5);
+  const availableUsd = state.user.account_status === 'sponsored'
+    ? (state.wallet.balance_frozen_usd || 0)
+    : (state.wallet.balance_usd || state.wallet.usd || 0);
 
   // Cálculo de projeção visual do lucro (não afeta o lucro real do backend)
   // Fórmula: Total Investido * (Taxa Diária Média / Ciclos por Dia) * (Tempo Decorrido / Tempo Total do Ciclo)
@@ -34,7 +37,7 @@ export const HomeView = ({ navigate }) => {
           ) : null}
           
           <span className="text-xs text-gray-400 uppercase">{t('home.deposit')}</span>
-          <span className={`text-lg font-bold ${THEME.accent}`}>${state.wallet.balance_usd?.toFixed(2) || '0.00'}</span>
+          <span className={`text-lg font-bold ${THEME.accent}`}>${availableUsd.toFixed(2)}</span>
           <span className="text-[9px] text-gray-600 mt-1">Disponível</span>
         </Card>
         <Card className="flex flex-col items-center justify-center text-center">

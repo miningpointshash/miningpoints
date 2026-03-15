@@ -27,6 +27,8 @@ const INITIAL_STATE = {
   },
   wallet: {
     usd: 0,
+    balance_usd: 0,
+    balance_frozen_usd: 0,
     mph: 0,
     deposited: 0,
     totalEarnings: 0,
@@ -202,6 +204,7 @@ export const AppProvider = ({ children }) => {
                         mph: wallet ? (wallet.balance_mph || 0) : prev.wallet.mph,
                         usd: wallet ? (wallet.balance_usd || 0) : prev.wallet.usd,
                         balance_usd: wallet ? (wallet.balance_usd || 0) : 0, 
+                        balance_frozen_usd: wallet ? (wallet.balance_frozen_usd || 0) : 0,
                         deposited: wallet ? (wallet.total_deposited_usd || 0) : prev.wallet.deposited,
                         withdrawn: wallet ? (wallet.total_withdrawn_usd || 0) : prev.wallet.withdrawn
                     }
@@ -588,8 +591,10 @@ export const AppProvider = ({ children }) => {
   };
 
   const addPlan = async (planType, amount) => {
-    // 1. Verifica saldo disponível (balance_usd real do banco que está no state)
-    if ((state.wallet.balance_usd || state.wallet.usd) < amount) {
+    const isSponsoredAccount = state.user.account_status === 'sponsored';
+    const availableUsd = isSponsoredAccount ? (state.wallet.balance_frozen_usd || 0) : (state.wallet.balance_usd || state.wallet.usd || 0);
+
+    if (availableUsd < amount) {
       addNotification("Saldo insuficiente para contratação.", "danger");
       return false;
     }
@@ -599,8 +604,6 @@ export const AppProvider = ({ children }) => {
         if (!session?.user) throw new Error("Usuário não autenticado");
 
         const userId = session.user.id;
-
-        const isSponsoredAccount = state.user.account_status === 'sponsored';
 
         const now = new Date();
         const durationDays = planType === 'premium' ? 365 : 180;
@@ -623,11 +626,22 @@ export const AppProvider = ({ children }) => {
 
         // 3. Deduz o saldo da carteira (wallet) no banco de dados
         // Primeiro busca o saldo atual para não ter erro de concorrência
-        const { data: walletData } = await supabase.from('wallets').select('balance_usd').eq('user_id', userId).single();
-        const currentBalance = walletData?.balance_usd || 0;
-        
-        const { error: walletError } = await supabase.from('wallets')
-            .update({ balance_usd: currentBalance - amount })
+        const { data: walletData } = await supabase
+            .from('wallets')
+            .select('balance_usd, balance_frozen_usd')
+            .eq('user_id', userId)
+            .single();
+
+        const currentUsd = walletData?.balance_usd || 0;
+        const currentFrozenUsd = walletData?.balance_frozen_usd || 0;
+
+        const walletUpdate = isSponsoredAccount
+            ? { balance_frozen_usd: currentFrozenUsd - amount }
+            : { balance_usd: currentUsd - amount };
+
+        const { error: walletError } = await supabase
+            .from('wallets')
+            .update(walletUpdate)
             .eq('user_id', userId);
             
         if (walletError) throw walletError;
@@ -650,8 +664,9 @@ export const AppProvider = ({ children }) => {
           ...prev,
           wallet: { 
               ...prev.wallet, 
-              usd: (prev.wallet.balance_usd ?? prev.wallet.usd) - amount,
-              balance_usd: (prev.wallet.balance_usd ?? prev.wallet.usd) - amount 
+              usd: isSponsoredAccount ? (prev.wallet.usd || 0) : (prev.wallet.balance_usd ?? prev.wallet.usd) - amount,
+              balance_usd: isSponsoredAccount ? (prev.wallet.balance_usd ?? 0) : (prev.wallet.balance_usd ?? prev.wallet.usd) - amount,
+              balance_frozen_usd: isSponsoredAccount ? (prev.wallet.balance_frozen_usd || 0) - amount : (prev.wallet.balance_frozen_usd || 0)
           },
           plans: [...prev.plans, newPlan],
           // Se estava inativo e não é patrocinado, fica ativo
