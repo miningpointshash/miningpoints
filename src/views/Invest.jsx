@@ -6,15 +6,15 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 
 export const InvestView = ({ navigate }) => {
-  const { addPlan, state, t } = useContext(AppContext);
+  const { addPlan, addNotification, state, t } = useContext(AppContext);
   // Separate states for inputs
   const [stdAmount, setStdAmount] = useState('');
   const [premAmount, setPremAmount] = useState('');
 
   // Calculate totals
   const totalInvested = state.plans.reduce((acc, p) => p.active ? acc + p.amount : acc, 0);
-  // Valor Disponível = Saldo Atual na Carteira (state.wallet.usd)
-  const availableBalance = state.wallet.usd;
+  // Valor Disponível = Saldo Atual na Carteira (balance_usd)
+  const availableBalance = state.wallet.balance_usd || state.wallet.usd || 0;
 
   const handleBuy = async (planType, min, max, valStr, setVal) => {
     const val = parseFloat(valStr);

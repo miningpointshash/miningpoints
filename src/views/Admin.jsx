@@ -284,7 +284,8 @@ export const AdminView = ({ navigate }) => {
         botsActive: 0,
         totalInvestedUsd: 0,
         totalWithdrawnUsd: 0,
-        networkEarningsUsd: 0
+        networkEarningsUsd: 0,
+        totalSponsoredUsd: 0
     });
 
     // Carregar estatísticas do Supabase
@@ -319,6 +320,12 @@ export const AdminView = ({ navigate }) => {
                 .in('type', ['unilevel_bonus', 'career_bonus']);
             const totalCommissions = commissions?.reduce((acc, curr) => acc + (curr.amount || 0), 0) || 0;
 
+            // Total Patrocinado
+            const { data: sponsored } = await supabase.from('profiles')
+                .select('sponsored_amount')
+                .eq('account_status', 'sponsored');
+            const totalSponsored = sponsored?.reduce((acc, curr) => acc + (curr.sponsored_amount || 0), 0) || 0;
+
             setStats({
                 totalUsers: count || 0,
                 totalMphInPlay: totalMph,
@@ -326,7 +333,8 @@ export const AdminView = ({ navigate }) => {
                 botsActive: state.bots.filter(b => b.active).length,
                 totalInvestedUsd: totalInvested,
                 totalWithdrawnUsd: totalWithdrawn,
-                networkEarningsUsd: totalCommissions
+                networkEarningsUsd: totalCommissions,
+                totalSponsoredUsd: totalSponsored
             });
         } catch (error) {
             console.error('Erro ao carregar estatísticas:', error);
@@ -431,6 +439,41 @@ export const AdminView = ({ navigate }) => {
     // Ações de Usuário
     const handleUpdateUser = async (userId, updates) => {
         try {
+            let rpcSuccess = false;
+
+            // Lógica de Patrocínio: Creditar Carteira se não houver saldo
+            if (updates.account_status === 'sponsored' && updates.sponsored_amount > 0) {
+                 // Tenta via RPC (Recomendado para garantir atomicidade e permissões)
+                 const { error: rpcError } = await supabase.rpc('admin_sponsor_user', {
+                     target_user_id: userId,
+                     sponsorship_amount: updates.sponsored_amount,
+                     sponsorship_multiplier: updates.sponsored_multiplier || 2,
+                     admin_id: state.user.id
+                 });
+                 
+                 if (!rpcError) {
+                     rpcSuccess = true;
+                     // Remove campos já atualizados pela RPC para evitar redundância/erros
+                     delete updates.account_status;
+                     delete updates.sponsored_amount;
+                     delete updates.sponsored_multiplier;
+                     
+                     // Registrar Log (se a RPC não registrar, mas ela registra)
+                 } else {
+                     console.warn("RPC admin_sponsor_user falhou ou não existe. Tentando método legado...", rpcError);
+                     // Fallback: Tenta atualizar carteira manualmente (sujeito a RLS)
+                     const { data: wallet } = await supabase.from('wallets').select('balance_usd').eq('user_id', userId).single();
+                     if (!wallet) {
+                         await supabase.from('wallets').insert([{ user_id: userId, balance_usd: updates.sponsored_amount }]);
+                     } else {
+                         // Garante que o saldo seja pelo menos o valor do patrocínio
+                         if (wallet.balance_usd < updates.sponsored_amount) {
+                             await supabase.from('wallets').update({ balance_usd: updates.sponsored_amount }).eq('user_id', userId);
+                         }
+                     }
+                 }
+            }
+
             // Processar Saque Automático Separadamente (Via RPC para Auditoria)
             if ('automatic_withdrawal' in updates) {
                 const { error: rpcError } = await supabase.rpc('toggle_automatic_withdrawal', {
@@ -521,59 +564,6 @@ export const AdminView = ({ navigate }) => {
         } catch (error) {
             console.error('Erro ao alterar patrocinador:', error);
             addNotification('Erro ao alterar patrocinador.', 'danger');
-        }
-    };
-
-    const handleUpdateBalance = async (userId, type, amount) => {
-        try {
-            const { data: wallet } = await supabase
-                .from('wallets')
-                .select('*')
-                .eq('user_id', userId)
-                .single();
-
-            if (!wallet) throw new Error('Carteira não encontrada');
-
-            const newBalance = parseFloat(wallet[type]) + parseFloat(amount);
-            
-            // Atualiza Saldo na Wallet
-            const { error } = await supabase
-                .from('wallets')
-                .update({ [type]: newBalance })
-                .eq('user_id', userId);
-
-            if (error) throw error;
-
-            // Registra Transação (Depósito Manual pelo Admin)
-            if (amount > 0) {
-                await supabase.from('transactions').insert([{
-                    user_id: userId,
-                    type: 'deposit',
-                    amount: parseFloat(amount),
-                    currency: type === 'balance_mph' ? 'MPH' : 'USD',
-                    status: 'completed',
-                    description: 'Depósito Manual via Admin Panel'
-                }]);
-            }
-
-            // Registrar Log Admin
-            await supabase.from('admin_logs').insert([{
-                admin_id: state.user.id,
-                target_user_id: userId,
-                action_type: 'manual_balance_adjustment',
-                details: {
-                    type: type,
-                    amount: amount,
-                    new_balance: newBalance,
-                    timestamp: new Date().toISOString()
-                }
-            }]);
-
-            addNotification('Saldo atualizado!', 'success');
-            fetchUsers();
-        } catch (error) {
-            console.error('Erro ao atualizar saldo:', error);
-            addNotification('Falha ao atualizar saldo.', 'danger');
         }
     };
 
@@ -683,6 +673,13 @@ export const AdminView = ({ navigate }) => {
                     </div>
                     <p className="text-xl font-bold font-mono text-blue-400">${stats.networkEarningsUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 </Card>
+                <Card className="bg-gray-900 border-gray-800 p-4">
+                    <div className="flex items-center gap-3 mb-2">
+                        <DollarSign className="text-blue-400" size={20} />
+                        <h3 className="text-sm text-gray-400">Total Patrocinado</h3>
+                    </div>
+                    <p className="text-xl font-bold font-mono text-blue-400">${stats.totalSponsoredUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                </Card>
             </div>
             
             <div className="mt-6">
@@ -747,6 +744,26 @@ export const AdminView = ({ navigate }) => {
                             <div className="bg-black/30 p-2 rounded border border-gray-800">
                                 <span className="text-gray-500 block">Saldo USD</span>
                                 <span className="font-mono text-green-400 font-bold">${user.wallets?.balance_usd || 0}</span>
+                            </div>
+                            {user.account_status === 'sponsored' && (
+                                <div className="col-span-2 bg-blue-900/20 p-2 rounded border border-blue-900/50 mt-1">
+                                    <span className="text-blue-300 block text-[10px] uppercase font-bold flex items-center gap-1">
+                                        <DollarSign size={10} /> Saldo Patrocinado
+                                    </span>
+                                    <span className="font-mono text-blue-400 font-bold text-sm">
+                                        ${user.sponsored_amount || 0}
+                                    </span>
+                                    <span className="text-[9px] text-gray-500 ml-2">
+                                        (Meta: ${(user.sponsored_amount || 0) * (user.sponsored_multiplier || 2)})
+                                    </span>
+                                </div>
+                            )}
+                            {/* Visualização de Depósitos Reais para Auditoria */}
+                            <div className="col-span-2 bg-gray-800/30 p-2 rounded border border-gray-700/50 mt-1 flex justify-between items-center">
+                                <span className="text-[10px] text-gray-500 uppercase">Total Depositado (API)</span>
+                                <span className="font-mono text-white font-bold text-xs">
+                                    ${user.wallets?.total_deposited_usd || 0}
+                                </span>
                             </div>
                         </div>
 
@@ -861,21 +878,6 @@ export const AdminView = ({ navigate }) => {
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                <div>
-                                    <label className="text-xs text-gray-400 mb-1 block">Adicionar MPH</label>
-                                    <div className="flex gap-2">
-                                        <Button size="sm" variant="outline" onClick={() => handleUpdateBalance(editUser.id, 'balance_mph', 1000)}>+1k</Button>
-                                        <Button size="sm" variant="outline" onClick={() => handleUpdateBalance(editUser.id, 'balance_mph', 5000)}>+5k</Button>
-                                        <Button size="sm" variant="outline" onClick={() => handleUpdateBalance(editUser.id, 'balance_mph', 10000)}>+10k</Button>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-xs text-gray-400 mb-1 block">Adicionar USD (Congelado)</label>
-                                    <div className="flex gap-2">
-                                        <Button size="sm" variant="outline" onClick={() => handleUpdateBalance(editUser.id, 'balance_frozen_usd', 100)}>+$100</Button>
-                                        <Button size="sm" variant="outline" onClick={() => handleUpdateBalance(editUser.id, 'balance_frozen_usd', 500)}>+$500</Button>
-                                    </div>
-                                </div>
                                 <div>
                                     <label className="text-xs text-gray-400 mb-1 block">Status da Conta</label>
                                     <select 

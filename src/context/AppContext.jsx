@@ -193,6 +193,7 @@ export const AppProvider = ({ children }) => {
                         sponsor_id: profile.sponsor_id,
                         team: profile.team_volume_usd || 0,
                         role: profile.role || 'user',
+                        account_status: profile.account_status, // Importante para controle
                         automatic_withdrawal: profile.automatic_withdrawal || false,
                         isAuthenticated: true // Flag para controle de rota
                     },
@@ -200,6 +201,7 @@ export const AppProvider = ({ children }) => {
                         ...prev.wallet,
                         mph: wallet ? (wallet.balance_mph || 0) : prev.wallet.mph,
                         usd: wallet ? (wallet.balance_usd || 0) : prev.wallet.usd,
+                        balance_usd: wallet ? (wallet.balance_usd || 0) : 0, 
                         deposited: wallet ? (wallet.total_deposited_usd || 0) : prev.wallet.deposited,
                         withdrawn: wallet ? (wallet.total_withdrawn_usd || 0) : prev.wallet.withdrawn
                     }
@@ -585,28 +587,88 @@ export const AppProvider = ({ children }) => {
     }));
   };
 
-  const addPlan = (planType, amount) => {
-    if (state.wallet.usd < amount) {
+  const addPlan = async (planType, amount) => {
+    // 1. Verifica saldo disponível (balance_usd real do banco que está no state)
+    if ((state.wallet.balance_usd || state.wallet.usd) < amount) {
       addNotification("Saldo insuficiente para contratação.", "danger");
       return false;
     }
 
-    const newPlan = {
-      id: Date.now(),
-      type: planType, // 'standard' or 'premium'
-      amount: parseFloat(amount),
-      active: true,
-      startDate: new Date().toISOString(),
-      roi: 0
-    };
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) throw new Error("Usuário não autenticado");
 
-    setState(prev => ({
-      ...prev,
-      wallet: { ...prev.wallet, usd: prev.wallet.usd - amount },
-      plans: [...prev.plans, newPlan]
-    }));
-    addNotification(`Contrato ${planType.toUpperCase()} ativado: -$${amount}`, "plan");
-    return true;
+        const userId = session.user.id;
+
+        const isSponsoredAccount = state.user.account_status === 'sponsored';
+
+        const now = new Date();
+        const durationDays = planType === 'premium' ? 365 : 180;
+        const dailyRoiPercent = planType === 'premium' ? 1.3 : 1.0;
+        const totalReturnMultiplier = planType === 'premium' ? 4.75 : 1.8;
+        const endDate = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+        // 2. Insere o Plano no Banco de Dados (campos obrigatórios)
+        const { error: planError } = await supabase.from('plans').insert([{
+            user_id: userId,
+            type: planType,
+            amount_invested: amount,
+            daily_roi_percent: dailyRoiPercent,
+            total_return_limit: parseFloat((amount * totalReturnMultiplier).toFixed(2)),
+            end_date: endDate.toISOString(),
+            status: 'active'
+        }]);
+
+        if (planError) throw planError;
+
+        // 3. Deduz o saldo da carteira (wallet) no banco de dados
+        // Primeiro busca o saldo atual para não ter erro de concorrência
+        const { data: walletData } = await supabase.from('wallets').select('balance_usd').eq('user_id', userId).single();
+        const currentBalance = walletData?.balance_usd || 0;
+        
+        const { error: walletError } = await supabase.from('wallets')
+            .update({ balance_usd: currentBalance - amount })
+            .eq('user_id', userId);
+            
+        if (walletError) throw walletError;
+
+        // 4. Patrocínio: não gera bônus de rede.
+        // (Bônus de rede só deve existir para depósitos reais / após ativação de conta)
+        // Nenhuma ação adicional aqui.
+
+        // 5. Atualiza o Estado Local
+        const newPlan = {
+          id: Date.now(), // Temporário até recarregar
+          type: planType,
+          amount: parseFloat(amount),
+          active: true,
+          startDate: now.toISOString(),
+          roi: 0
+        };
+
+        setState(prev => ({
+          ...prev,
+          wallet: { 
+              ...prev.wallet, 
+              usd: (prev.wallet.balance_usd ?? prev.wallet.usd) - amount,
+              balance_usd: (prev.wallet.balance_usd ?? prev.wallet.usd) - amount 
+          },
+          plans: [...prev.plans, newPlan],
+          // Se estava inativo e não é patrocinado, fica ativo
+          user: {
+              ...prev.user,
+              account_status: (!isSponsoredAccount && prev.user.account_status === 'inactive') ? 'active' : prev.user.account_status
+          }
+        }));
+
+        addNotification(`Contrato ${planType.toUpperCase()} ativado: -$${amount}`, "plan");
+        return true;
+
+    } catch (error) {
+        console.error("Erro ao ativar plano:", error);
+        addNotification(error?.message ? `Erro ao processar ativação do plano: ${error.message}` : "Erro ao processar ativação do plano.", "danger");
+        return false;
+    }
   };
 
   const resetAppData = () => {

@@ -25,9 +25,17 @@ export const HomeView = ({ navigate }) => {
       
       {/* 4 Cards Principais */}
       <div className="grid grid-cols-2 gap-3 px-4">
-        <Card className="flex flex-col items-center justify-center text-center">
+        <Card className="flex flex-col items-center justify-center text-center relative overflow-hidden">
+          {/* Indicador de Patrocínio */}
+          {state.user.account_status === 'sponsored' ? (
+             <div className="absolute top-0 right-0">
+                <div className="w-0 h-0 border-l-[20px] border-l-transparent border-t-[20px] border-t-blue-500/50"></div>
+             </div>
+          ) : null}
+          
           <span className="text-xs text-gray-400 uppercase">{t('home.deposit')}</span>
-          <span className={`text-lg font-bold ${THEME.accent}`}>${state.wallet.deposited.toFixed(2)}</span>
+          <span className={`text-lg font-bold ${THEME.accent}`}>${state.wallet.balance_usd?.toFixed(2) || '0.00'}</span>
+          <span className="text-[9px] text-gray-600 mt-1">Disponível</span>
         </Card>
         <Card className="flex flex-col items-center justify-center text-center">
           <span className="text-xs text-gray-400 uppercase">{t('home.team')}</span>
