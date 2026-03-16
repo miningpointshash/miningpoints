@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { ArrowDownCircle, ArrowUpCircle, RefreshCw, Coins, X, AlertTriangle } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, RefreshCw, Coins, X, AlertTriangle, Copy } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/ui/Button';
@@ -11,6 +11,11 @@ export const WalletView = ({ navigate }) => {
   const [inputValue, setInputValue] = useState('');
   const [selectedCrypto, setSelectedCrypto] = useState('usdt_bep20');
   const [activeCoins, setActiveCoins] = useState(null);
+  const [cpf, setCpf] = useState('');
+  const usdToBrl = Number(import.meta?.env?.VITE_USD_TO_BRL || 0);
+  const pixFeePercent = Number(import.meta?.env?.VITE_PIX_FEE_PERCENT || 0);
+  const [pixInvoice, setPixInvoice] = useState(null);
+  const [cryptoInvoice, setCryptoInvoice] = useState(null);
 
   // Carregar moedas ativas do banco (via Admin Settings)
   useEffect(() => {
@@ -28,6 +33,35 @@ export const WalletView = ({ navigate }) => {
 
   const wallets = (state.user && state.user.wallets) || {};
   const withdrawAddress = wallets[withdrawMethod] || '';
+  const pixPayload = '00020126580014br.gov.bcb.pix0136123e4567-e89b-12d3-a456-4266141740005204000053039865802BR5913MiningPoints6008Brasilia62070503***63041234';
+  const depositUsd = Math.max(0, parseFloat(inputValue || '0') || 0);
+  const baseBrl = usdToBrl > 0 ? depositUsd * usdToBrl : 0;
+  const feeBrl = baseBrl > 0 && pixFeePercent > 0 ? baseBrl * (pixFeePercent / 100) : 0;
+  const totalBrl = baseBrl + feeBrl;
+
+  const copyToClipboard = async (text, successMsg) => {
+    const value = String(text || '');
+    if (!value) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const el = document.createElement('textarea');
+        el.value = value;
+        el.setAttribute('readonly', '');
+        el.style.position = 'absolute';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+      }
+      addNotification(successMsg || 'Copiado!', 'success');
+    } catch (err) {
+      console.error('Erro ao copiar:', err);
+      addNotification('Falha ao copiar. Copie manualmente.', 'danger');
+    }
+  };
 
   const withdrawLabels = {
     usdt_bep20: 'USDT (BEP-20)',
@@ -51,12 +85,126 @@ export const WalletView = ({ navigate }) => {
       const minDeposit = 10;
       if (val < minDeposit) return alert(`Depósito mínimo: $${minDeposit}`);
       
-      // Lógica de depósito (Mock)
-      // Em produção, isso abriria gateway de pagamento ou geraria invoice real
-      
-      // Simula crédito após confirmação
-      addNotification('Depósito iniciado! Aguardando confirmação da rede...', 'info');
-      setMode('main');
+      if (selectedCrypto === 'pix') {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const accessToken = session?.access_token;
+          
+          console.log('--- DEBUG PIX START ---');
+          console.log('Session User:', session?.user?.id);
+          console.log('Has Access Token:', !!accessToken);
+
+          if (!accessToken) {
+            addNotification('Sessão expirada ou inválida. Faça login novamente.', 'danger');
+            return;
+          }
+
+          const { data, error } = await supabase.functions.invoke('pix-create', {
+            body: { 
+              amount_usd: val,
+              document_number: cpf.replace(/\D/g, '') 
+            },
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'x-user-jwt': accessToken,
+              apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
+            }
+          });
+
+          console.log('--- DEBUG PIX END ---');
+          console.log('Response Data:', data);
+          console.log('Response Error:', error);
+
+          if (error) throw error;
+          setPixInvoice(data);
+          if (data?.gateway && data.gateway.ok === false) {
+            addNotification('PIX gerado (modo alternativo). Se o gateway estiver instável, pague pelo QR/Copia e Cola e aguarde confirmação.', 'info');
+          } else {
+            addNotification('PIX gerado. Pague usando o QR ou Copia e Cola.', 'deposit');
+          }
+          return;
+        } catch (err) {
+          console.error('Erro ao gerar PIX:', err);
+          const ctxBody = err?.context?.body;
+          let parsedBody = null;
+          if (typeof ctxBody === 'string') {
+            try {
+              parsedBody = JSON.parse(ctxBody);
+            } catch {
+              parsedBody = null;
+            }
+          } else if (ctxBody && typeof ctxBody === 'object') {
+            parsedBody = ctxBody;
+          }
+
+          const bodyError = parsedBody?.error || parsedBody?.message;
+          const bodyDetails = parsedBody?.details?.message || parsedBody?.details;
+          const status = err?.context?.status;
+          const rawBody = ctxBody && !bodyError && !bodyDetails ? String(ctxBody) : '';
+          const hasUsefulRawBody =
+            rawBody &&
+            rawBody !== '{}' &&
+            rawBody !== 'null' &&
+            rawBody !== '[object Object]' &&
+            rawBody !== '[object ReadableStream]';
+          const message =
+            bodyError ||
+            bodyDetails ||
+            (hasUsefulRawBody ? rawBody : '') ||
+            err?.context?.message ||
+            err?.message ||
+            (status ? `HTTP ${status}` : '') ||
+            'Falha ao gerar PIX.';
+          addNotification(`Erro ao gerar PIX: ${message}`, 'danger');
+          return;
+        }
+      }
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const accessToken = session?.access_token;
+        if (!accessToken) {
+          addNotification('Sessão expirada ou inválida. Faça login novamente.', 'danger');
+          return;
+        }
+
+        const currencyMap = {
+          usdt_bep20: 'usdtbsc',
+          usdt_trc20: 'usdttrc20',
+          usdt_polygon: 'usdtmatic',
+          usdt_arbitrum: 'usdtarbitrum',
+          usdc_bep20: 'usdcbsc',
+          usdc_arbitrum: 'usdcarbitrum',
+          btc: 'btc',
+          eth: 'eth',
+          xrp: 'xrp'
+        };
+        const payCurrency = currencyMap[selectedCrypto] || selectedCrypto.split('_')[0] || 'btc';
+
+        const { data, error } = await supabase.functions.invoke('nowpayments-create', {
+          body: {
+            amount_usd: val,
+            pay_currency: payCurrency,
+            order_description: `Depósito ${payCurrency.toUpperCase()}`
+          },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'x-user-jwt': accessToken,
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
+          }
+        });
+
+        if (error) throw error;
+        setCryptoInvoice({ ...data, pay_currency: payCurrency, method_key: selectedCrypto });
+        addNotification('Endereço gerado. Envie o valor exato para confirmar o depósito.', 'info');
+        return;
+      } catch (err) {
+        console.error('Erro ao gerar endereço cripto:', err);
+        const status = err?.context?.status;
+        const message = err?.message || (status ? `HTTP ${status}` : '') || 'Falha ao gerar depósito cripto.';
+        addNotification(`Erro no depósito cripto: ${message}`, 'danger');
+        return;
+      }
     }
     
     if (mode === 'withdraw') {
@@ -312,28 +460,101 @@ export const WalletView = ({ navigate }) => {
                 <label className="text-xs text-gray-500 block mb-2">{t('wallet.method')}</label>
                 <select 
                     className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white text-sm"
-                    onChange={(e) => setSelectedCrypto(e.target.value)}
+                    onChange={(e) => { setSelectedCrypto(e.target.value); setPixInvoice(null); setCryptoInvoice(null); }}
                     value={selectedCrypto}
                 >
                     {Object.entries(withdrawLabels).map(([key, label]) => (
                         <option key={key} value={key}>{label}</option>
                     ))}
                 </select>
+                {selectedCrypto === 'pix' && (
+                    <div className="mt-3">
+                        <label className="text-xs text-gray-500 block mb-2">CPF do Pagador (Opcional, evita recusa)</label>
+                        <input
+                            type="text"
+                            value={cpf}
+                            onChange={(e) => {
+                                const v = e.target.value.replace(/\D/g, '').slice(0, 11);
+                                setCpf(v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'));
+                            }}
+                            className="w-full bg-black border border-gray-700 rounded p-2 text-white text-sm outline-none focus:ring-2 ring-purple-500"
+                            placeholder="000.000.000-00"
+                        />
+                    </div>
+                )}
                 {selectedCrypto === 'pix' ? (
                     <div className="mt-2 p-2 bg-white rounded text-center">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=00020126580014br.gov.bcb.pix0136123e4567-e89b-12d3-a456-4266141740005204000053039865802BR5913MiningPoints6008Brasilia62070503***63041234" className="mx-auto w-32 h-32" alt="QR Code PIX"/>
-                        <p className="text-xs text-black mt-1 font-mono">Copia e Cola: 000201... (Simulado)</p>
+                        {pixInvoice?.qr_code_url ? (
+                          <img src={pixInvoice.qr_code_url} className="mx-auto w-40 h-40" alt="QR Code PIX"/>
+                        ) : (
+                          <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(pixPayload)}`} className="mx-auto w-32 h-32" alt="QR Code PIX"/>
+                        )}
+                        <div className="mt-2 bg-black/10 rounded p-2 text-left">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-[11px] text-black font-mono break-all flex-1">{pixInvoice?.payload || pixPayload}</p>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(pixInvoice?.payload || pixPayload, 'PIX Copia e Cola copiado!')}
+                              className="text-black/70 hover:text-black flex-shrink-0"
+                              aria-label="Copiar PIX Copia e Cola"
+                              title="Copiar"
+                            >
+                              <Copy size={16} />
+                            </button>
+                          </div>
+                          {usdToBrl > 0 && (
+                            <div className="mt-2 text-[11px] text-black/70">
+                              <div>Taxa usada: <span className="font-bold">1 USD = {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(usdToBrl)}</span></div>
+                              <div className="mt-1">
+                                Valor para envio (aprox.):{' '}
+                                <span className="font-bold">
+                                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pixInvoice?.amount_brl_expected || totalBrl)}
+                                </span>
+                              </div>
+                              {pixFeePercent > 0 && (
+                                <div className="mt-1">
+                                  Taxa/fee do gateway: <span className="font-bold">{pixFeePercent}%</span> ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(feeBrl)})
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                     </div>
                 ) : (
                     <div className="mt-2 p-3 bg-gray-900 border border-gray-700 rounded flex flex-col items-center">
                          <p className="text-xs text-gray-400 mb-2">Envie exatamente o valor para o endereço abaixo:</p>
+                         {cryptoInvoice?.method_key === selectedCrypto && cryptoInvoice?.qr_code_url && (
+                            <img src={cryptoInvoice.qr_code_url} className="mx-auto w-32 h-32 mb-2 bg-white p-1 rounded" alt="QR Code Cripto"/>
+                         )}
+                         {cryptoInvoice?.method_key === selectedCrypto && cryptoInvoice?.pay_amount && cryptoInvoice?.pay_currency && (
+                            <p className="text-[11px] text-gray-300 mb-2">
+                                Valor exato: <span className="text-white font-semibold">{cryptoInvoice.pay_amount} {String(cryptoInvoice.pay_currency).toUpperCase()}</span>
+                            </p>
+                         )}
                          <div className="bg-black p-2 rounded w-full flex justify-between items-center">
                             <span className="text-xs font-mono text-gray-300 break-all">
-                                {selectedCrypto.includes('usdt') ? '0x71C7656EC7ab88b098defB751B7401B5f6d8976F' : 
-                                 selectedCrypto.includes('btc') ? 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh' :
-                                 '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'}
+                                {(cryptoInvoice?.method_key === selectedCrypto && cryptoInvoice?.pay_address) ? cryptoInvoice.pay_address : (
+                                  selectedCrypto.includes('usdt') ? '0x71C7656EC7ab88b098defB751B7401B5f6d8976F' : 
+                                   selectedCrypto.includes('btc') ? 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh' :
+                                   '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'
+                                )}
                             </span>
-                            <button className="ml-2 text-purple-400 hover:text-purple-300"><RefreshCw size={14}/></button>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(
+                                (cryptoInvoice?.method_key === selectedCrypto && cryptoInvoice?.pay_address) ? cryptoInvoice.pay_address : (
+                                  selectedCrypto.includes('usdt') ? '0x71C7656EC7ab88b098defB751B7401B5f6d8976F' : 
+                                  selectedCrypto.includes('btc') ? 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh' :
+                                  '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'
+                                ),
+                                'Endereço copiado!'
+                              )}
+                              className="ml-2 text-purple-400 hover:text-purple-300"
+                              aria-label="Copiar endereço"
+                              title="Copiar"
+                            >
+                              <Copy size={14}/>
+                            </button>
                          </div>
                          <p className="text-[10px] text-yellow-500 mt-2 flex items-center gap-1">
                             <AlertTriangle size={10} /> Rede Obrigatória: 

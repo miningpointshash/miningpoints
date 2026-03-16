@@ -93,24 +93,28 @@ export const AppProvider = ({ children }) => {
 
   // Carregar dados do LocalStorage (Fallback)
   useEffect(() => {
-    const saved = localStorage.getItem('mining_points_mvp_v1');
-    if (saved) {
-        try {
-            const parsed = JSON.parse(saved);
-            setState(prev => ({
-                ...INITIAL_STATE,
-                ...parsed,
-                // Garantir merge defensivo
-                rankings: parsed.rankings || INITIAL_STATE.rankings,
-                tournaments: parsed.tournaments || INITIAL_STATE.tournaments,
-                ong: parsed.ong || INITIAL_STATE.ong,
-                bots: parsed.bots || INITIAL_STATE.bots,
-                gameStats: parsed.gameStats || INITIAL_STATE.gameStats,
-            }));
-        } catch {
-            localStorage.removeItem('mining_points_mvp_v1');
+    const loadInitialData = async () => {
+        // LocalStorage para estado básico
+        const saved = localStorage.getItem('mining_points_mvp_v1');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                setState(prev => ({
+                    ...INITIAL_STATE,
+                    ...parsed,
+                    rankings: parsed.rankings || INITIAL_STATE.rankings,
+                    tournaments: parsed.tournaments || INITIAL_STATE.tournaments,
+                    ong: parsed.ong || INITIAL_STATE.ong,
+                    bots: parsed.bots || INITIAL_STATE.bots,
+                    gameStats: parsed.gameStats || INITIAL_STATE.gameStats,
+                }));
+            } catch {
+                localStorage.removeItem('mining_points_mvp_v1');
+            }
         }
-    }
+    };
+
+    loadInitialData();
   }, []);
 
   // Sincronizar com Supabase ao iniciar
@@ -130,15 +134,31 @@ export const AppProvider = ({ children }) => {
             }
 
             // Busca perfil, carteira e planos em paralelo
-            let [profileRes, walletRes, plansRes] = await Promise.all([
+            let [profileRes, walletRes, plansRes, txRes, roiRes] = await Promise.all([
                 supabase.from('profiles').select('*').eq('id', userId).single(),
                 supabase.from('wallets').select('*').eq('user_id', userId).single(),
-                supabase.from('plans').select('*').eq('user_id', userId)
+                supabase.from('plans').select('*').eq('user_id', userId),
+                supabase
+                    .from('transactions')
+                    .select('id,type,amount,currency,status,description,created_at')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: false })
+                    .limit(30),
+                supabase
+                    .from('transactions')
+                    .select('id,amount,currency,status,created_at')
+                    .eq('user_id', userId)
+                    .eq('type', 'daily_roi')
+                    .eq('status', 'completed')
+                    .order('created_at', { ascending: false })
+                    .limit(50)
             ]);
 
             let profile = profileRes.data;
             let wallet = walletRes.data;
             let dbPlans = plansRes.data || [];
+            const dbTxs = txRes.data || [];
+            const dbRoiTxs = roiRes.data || [];
 
             // Self-healing: Criar perfil se não existir (Correção para falta de Trigger)
             if (!profile && userId) {
@@ -197,6 +217,37 @@ export const AppProvider = ({ children }) => {
                      roi: 0
                  }));
 
+                const mappedNotifications = dbTxs.map(tx => {
+                    let notifType = 'info';
+                    if (tx.type === 'daily_roi') notifType = 'profit';
+                    else if (tx.type === 'plan_purchase') notifType = 'plan';
+                    else if (tx.type === 'deposit') notifType = 'deposit';
+                    else if (tx.type === 'withdrawal') notifType = 'withdraw';
+                    else if (tx.type === 'unilevel_bonus' || tx.type === 'residual_bonus' || tx.type === 'career_bonus') notifType = 'team';
+                    else if (tx.type === 'game_win' || tx.type === 'game_bet') notifType = 'game';
+
+                    const amountStr = typeof tx.amount === 'number' ? tx.amount.toFixed(2) : tx.amount;
+                    return {
+                        id: tx.id,
+                        msg: `${tx.description || tx.type}: $${amountStr} ${tx.currency || 'USD'}`,
+                        type: notifType,
+                        read: false,
+                        time: tx.created_at
+                    };
+                });
+
+                const mappedMiningHistory = dbRoiTxs
+                    .map(tx => ({
+                        id: tx.id,
+                        time: tx.created_at,
+                        details: [{
+                            profit: tx.amount,
+                            hash: `BLOCK-${String(tx.id).slice(0, 6)}`,
+                            status: 'profit'
+                        }]
+                    }))
+                    ;
+
                 setState(prev => ({
                     ...prev,
                     user: {
@@ -221,7 +272,9 @@ export const AppProvider = ({ children }) => {
                         withdrawn: wallet ? (wallet.total_withdrawn_usd || 0) : prev.wallet.withdrawn,
                         totalEarnings: wallet ? (wallet.total_earnings_usd || 0) : prev.wallet.totalEarnings
                  },
-                 plans: mappedPlans
+                 plans: mappedPlans,
+                 notifications: mappedNotifications,
+                 miningHistory: mappedMiningHistory
              }));
             }
         } catch (error) {
@@ -256,7 +309,7 @@ export const AppProvider = ({ children }) => {
     localStorage.setItem('mining_points_mvp_v1', JSON.stringify(state));
   }, [state]);
 
-  const addNotification = (msg, type = 'info') => {
+  const addNotification = async (msg, type = 'info') => {
     const notif = { 
         id: Date.now(), 
         msg, 
@@ -324,6 +377,18 @@ export const AppProvider = ({ children }) => {
 
         if (delta > 0) {
             addNotification(`Ciclo Finalizado: +$${delta.toFixed(4)} creditado.`, 'profit');
+        } else {
+            // Se delta é 0, verifica histórico recente no banco para não perder "visualização" se já foi pago
+            const { data: recentTxs } = await supabase.from('transactions')
+                .select('*')
+                .eq('user_id', userId)
+                .eq('type', 'daily_roi')
+                .gt('created_at', new Date(Date.now() - 900000).toISOString()) // Últimos 15 min
+                .limit(1);
+            
+            if (recentTxs && recentTxs.length > 0) {
+                 // Já foi pago pelo job, apenas atualiza UI se necessário
+            }
         }
 
     } catch (err) {
