@@ -10,6 +10,7 @@ import { Card } from '../components/ui/Card';
 export const TeamDashboard = ({ onBack }) => {
     const { state, t } = useContext(AppContext);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(null);
     const [networkData, setNetworkData] = useState([]);
     const [earnings, setEarnings] = useState({
         total: 0,
@@ -19,6 +20,7 @@ export const TeamDashboard = ({ onBack }) => {
         lastDate: null
     });
     const [expandedLevel, setExpandedLevel] = useState(1);
+    const [statusFilter, setStatusFilter] = useState('all');
 
     useEffect(() => {
         fetchTeamData();
@@ -27,6 +29,7 @@ export const TeamDashboard = ({ onBack }) => {
     const fetchTeamData = async () => {
         try {
             setLoading(true);
+            setLoadError(null);
             const userId = state.user.id;
 
             // 1. Fetch Network Tree
@@ -59,6 +62,7 @@ export const TeamDashboard = ({ onBack }) => {
 
         } catch (error) {
             console.error('Error fetching team data:', error);
+            setLoadError(error?.message || 'Falha ao carregar sua rede.');
         } finally {
             setLoading(false);
         }
@@ -70,6 +74,20 @@ export const TeamDashboard = ({ onBack }) => {
         acc[user.level].push(user);
         return acc;
     }, {});
+
+    const statusCounts = (networkData || []).reduce(
+        (acc, u) => {
+            const s = String(u.status || '').toLowerCase();
+            acc.all += 1;
+            if (s === 'active') acc.active += 1;
+            else if (s === 'inactive') acc.inactive += 1;
+            else if (s === 'sponsored') acc.sponsored += 1;
+            else if (s === 'blocked') acc.blocked += 1;
+            else acc.other += 1;
+            return acc;
+        },
+        { all: 0, active: 0, inactive: 0, sponsored: 0, blocked: 0, other: 0 }
+    );
 
     const levels = [1, 2, 3, 4, 5, 6, 7];
 
@@ -132,6 +150,36 @@ export const TeamDashboard = ({ onBack }) => {
                 </Card>
             </div>
 
+            {loadError && (
+                <div className="bg-red-900/20 border border-red-900/40 text-red-300 text-xs p-3 rounded-xl mb-6">
+                    {loadError}
+                </div>
+            )}
+
+            <div className="grid grid-cols-4 gap-2 mb-6">
+                {[
+                    { k: 'all', label: 'Todos', count: statusCounts.all },
+                    { k: 'active', label: 'Ativos', count: statusCounts.active },
+                    { k: 'inactive', label: 'Inativos', count: statusCounts.inactive },
+                    { k: 'sponsored', label: 'Patrocinados', count: statusCounts.sponsored },
+                ].map((it) => (
+                    <button
+                        key={it.k}
+                        onClick={() => setStatusFilter(it.k)}
+                        className={`px-3 py-2 rounded-xl border text-xs font-bold transition ${
+                            statusFilter === it.k
+                                ? 'bg-purple-900/40 border-purple-500/40 text-white'
+                                : 'bg-gray-900 border-gray-800 text-gray-400 hover:bg-gray-800'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span>{it.label}</span>
+                            <span className="text-[10px] text-gray-300">{it.count}</span>
+                        </div>
+                    </button>
+                ))}
+            </div>
+
             {/* Earnings Breakdown */}
             <h3 className="text-sm font-bold text-gray-400 mb-3 px-1">{t('team.breakdown')}</h3>
             <div className="grid grid-cols-3 gap-2 mb-8">
@@ -156,7 +204,10 @@ export const TeamDashboard = ({ onBack }) => {
             <h3 className="text-sm font-bold text-gray-400 mb-3 px-1">{t('team.myNetwork')}</h3>
             <div className="space-y-3">
                 {levels.map(level => {
-                    const users = usersByLevel[level] || [];
+                    const users = (usersByLevel[level] || []).filter((u) => {
+                        if (statusFilter === 'all') return true;
+                        return String(u.status || '').toLowerCase() === statusFilter;
+                    });
                     const isExpanded = expandedLevel === level;
                     
                     // Definição de Comissões por Tipo

@@ -18,6 +18,7 @@ import { MenuView } from './views/Menu';
 import { AdminView } from './views/Admin';
 import { AuthView } from './views/Auth'; // Importa Auth
 import { EmailWelcomeView } from './views/EmailWelcome';
+import { AccountSwitchView } from './views/AccountSwitch';
 import { getReferralUsername, parseReferralFromLocation, setReferralUsername } from './utils/referral';
 
 // --- ERROR BOUNDARY ---
@@ -72,6 +73,8 @@ const Layout = () => {
   const [isProfileOpen, setProfileOpen] = useState(false);
   const [isNotificationsOpen, setNotificationsOpen] = useState(false);
   const [isLanguageOpen, setLanguageOpen] = useState(false);
+  const [showAccountSwitch, setShowAccountSwitch] = useState(false);
+  const [referralForSwitch, setReferralForSwitch] = useState('');
   
   // Landing Page State
   const initialHasReferral =
@@ -106,6 +109,7 @@ const Layout = () => {
     const { username, normalizedUrl } = parseReferralFromLocation(window.location);
     if (username) {
       setReferralUsername(username);
+      setReferralForSwitch(username);
       if (normalizedUrl && normalizedUrl !== window.location.href) {
         history.replaceState(null, '', normalizedUrl);
       }
@@ -115,6 +119,17 @@ const Layout = () => {
       }
     }
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref') || referralForSwitch || getReferralUsername();
+    if (state.user.isAuthenticated && ref) {
+      setReferralForSwitch(ref);
+      setShowAccountSwitch(true);
+    } else {
+      setShowAccountSwitch(false);
+    }
+  }, [state.user.isAuthenticated, referralForSwitch]);
 
   const params = new URLSearchParams(window.location.search);
   const isWelcome = params.get('welcome') === '1';
@@ -128,6 +143,31 @@ const Layout = () => {
           }}
           onGoHome={() => {
             window.location.href = '/?view=home';
+          }}
+        />
+      );
+  }
+
+  if (showAccountSwitch && referralForSwitch) {
+      return (
+        <AccountSwitchView
+          currentUsername={state.user.username}
+          referralUsername={referralForSwitch}
+          onProceed={async () => {
+            await supabase.auth.signOut();
+            const url = new URL(window.location.href);
+            url.pathname = '/';
+            url.searchParams.set('auth', 'register');
+            url.searchParams.set('ref', referralForSwitch);
+            url.searchParams.delete('view');
+            window.location.href = url.toString();
+          }}
+          onCancel={() => {
+            const url = new URL(window.location.href);
+            url.pathname = '/';
+            url.searchParams.delete('auth');
+            url.searchParams.delete('ref');
+            window.location.href = url.toString();
           }}
         />
       );

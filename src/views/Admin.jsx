@@ -4,12 +4,13 @@ import { supabase } from '../lib/supabase';
 import { 
     Users, Shield, DollarSign, Activity, Edit2, Search, Filter, 
     Check, X, AlertTriangle, Zap, Lock, Unlock, RefreshCw, User,
-    Settings, CreditCard, Bitcoin, Save, Eye, EyeOff, Network, ChevronDown, ChevronUp, Trophy, TrendingUp, MessageSquare, Mail
+    Settings, CreditCard, Bitcoin, Save, Eye, EyeOff, Network, ChevronDown, ChevronUp, Trophy, TrendingUp, MessageSquare, Mail, Copy
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import SupportAdmin from '../components/admin/SupportAdmin';
 import WithdrawalManager from '../components/admin/WithdrawalManager';
+import { AdminAuditLogList } from '../components/admin/AdminAuditLogList';
 
 // Componente para visualizar a rede de um usuário (Adaptado do TeamDashboard)
 const NetworkViewer = ({ userId, username, onClose }) => {
@@ -364,7 +365,30 @@ export const AdminView = ({ navigate }) => {
                 .order('created_at', { ascending: false });
 
             if (pError) throw pError;
-            setUsers(profiles || []);
+
+            const rows = profiles || [];
+            const sponsorIds = Array.from(
+                new Set(rows.map((p) => p.sponsor_id).filter(Boolean))
+            );
+
+            const sponsorMap = new Map();
+            for (let i = 0; i < sponsorIds.length; i += 100) {
+                const chunk = sponsorIds.slice(i, i + 100);
+                const { data: sponsors, error: sError } = await supabase
+                    .from('profiles')
+                    .select('id, username')
+                    .in('id', chunk);
+
+                if (sError) throw sError;
+                (sponsors || []).forEach((s) => sponsorMap.set(s.id, s.username));
+            }
+
+            const enriched = rows.map((p) => ({
+                ...p,
+                sponsor: p.sponsor_id ? { username: sponsorMap.get(p.sponsor_id) || null } : null,
+            }));
+
+            setUsers(enriched);
         } catch (error) {
             console.error('Erro ao buscar usuários:', error);
             addNotification('Erro ao carregar lista de usuários.', 'danger');
@@ -450,6 +474,7 @@ export const AdminView = ({ navigate }) => {
     const handleUpdateUser = async (userId, updates) => {
         try {
             let rpcSuccess = false;
+            const before = users.find(u => u.id === userId) || null;
 
             // Lógica de Patrocínio: Creditar Carteira se não houver saldo
             if (updates.account_status === 'sponsored' && updates.sponsored_amount > 0) {
@@ -504,6 +529,34 @@ export const AdminView = ({ navigate }) => {
                     .eq('id', userId);
                 if (error) throw error;
             }
+
+                const after = { ...(before || {}), ...updates };
+                const details = {
+                    before: before ? {
+                        account_status: before.account_status,
+                        role: before.role,
+                        sponsor_id: before.sponsor_id,
+                        sponsored_amount: before.sponsored_amount,
+                        sponsored_multiplier: before.sponsored_multiplier
+                    } : null,
+                    after: {
+                        account_status: after.account_status,
+                        role: after.role,
+                        sponsor_id: after.sponsor_id,
+                        sponsored_amount: after.sponsored_amount,
+                        sponsored_multiplier: after.sponsored_multiplier
+                    },
+                    updates,
+                    timestamp: new Date().toISOString()
+                };
+
+                const { error: logError } = await supabase.from('admin_logs').insert([{
+                    admin_id: state.user.id,
+                    target_user_id: userId,
+                    action_type: 'update_user',
+                    details
+                }]);
+                if (logError) console.warn('Falha ao registrar log admin:', logError);
 
             addNotification('Usuário atualizado com sucesso!', 'success');
             
@@ -574,6 +627,36 @@ export const AdminView = ({ navigate }) => {
         } catch (error) {
             console.error('Erro ao alterar patrocinador:', error);
             addNotification('Erro ao alterar patrocinador.', 'danger');
+        }
+    };
+
+    const handleUpdateUsername = async (userId, newUsername) => {
+        const candidate = String(newUsername || '').trim();
+        if (!candidate) return;
+
+        const normalized = candidate.replace(/\s+/g, '');
+        if (!/^[A-Za-z0-9_]{3,32}$/.test(normalized)) {
+            addNotification('Username inválido. Use apenas letras, números e underline (3 a 32).', 'danger');
+            return;
+        }
+
+        if (!window.confirm(`Deseja alterar o username para "${normalized}"?`)) return;
+
+        try {
+            const { data, error } = await supabase.rpc('admin_update_username', {
+                target_user_id: userId,
+                new_username: normalized
+            });
+
+            if (error) throw error;
+
+            setUsers(prev => prev.map(u => u.id === userId ? { ...u, username: data?.new_username || normalized } : u));
+            setEditUser(prev => prev ? { ...prev, username: data?.new_username || normalized } : prev);
+            setViewFinancials(prev => prev && prev.id === userId ? { ...prev, username: data?.new_username || normalized } : prev);
+            addNotification('Username atualizado com sucesso!', 'success');
+        } catch (e) {
+            console.error('Erro ao atualizar username:', e);
+            addNotification(e?.message || 'Erro ao atualizar username.', 'danger');
         }
     };
 
@@ -830,6 +913,25 @@ export const AdminView = ({ navigate }) => {
                                     {viewFinancials.username}
                                 </h3>
                                 <p className="text-sm text-gray-500">{viewFinancials.email}</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Patrocinador: <span className="text-purple-300 font-bold">{viewFinancials.sponsor?.username || 'Nenhum'}</span>
+                                </p>
+                                <div className="mt-2 flex items-center gap-2 bg-black/40 border border-gray-800 rounded p-2">
+                                    <span className="text-[10px] text-gray-500 uppercase whitespace-nowrap">Link de convite</span>
+                                    <code className="text-[10px] text-green-400 flex-1 truncate">
+                                        {`${window.location.origin}/ref/${viewFinancials.username}`}
+                                    </code>
+                                    <button
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(`${window.location.origin}/ref/${viewFinancials.username}`);
+                                            addNotification('Link copiado!', 'success');
+                                        }}
+                                        className="text-gray-400 hover:text-white transition"
+                                        title="Copiar link"
+                                    >
+                                        <Copy size={14} />
+                                    </button>
+                                </div>
                             </div>
                             <Button size="icon" variant="ghost" onClick={() => setViewFinancials(null)}><X size={24} /></Button>
                         </div>
@@ -866,6 +968,8 @@ export const AdminView = ({ navigate }) => {
                                 <h4 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><RefreshCw size={18} className="text-blue-500" /> Histórico Financeiro</h4>
                                 <FinancialHistoryList userId={viewFinancials.id} />
                             </div>
+
+                            <AdminAuditLogList targetUserId={viewFinancials.id} />
                         </div>
                     </Card>
                 </div>
@@ -930,6 +1034,35 @@ export const AdminView = ({ navigate }) => {
                                             </p>
                                         </div>
                                     )}
+
+                                    <div className="bg-gray-800 p-3 rounded border border-gray-700 mt-2">
+                                        <label className="text-xs text-gray-400 mb-1 block font-bold">Alterar Username (sem espaços)</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="novo_username"
+                                                id="newUsernameInput"
+                                                defaultValue={editUser.username || ''}
+                                                className="w-full bg-black border border-gray-700 rounded p-2 text-sm text-white focus:border-purple-500 outline-none"
+                                                onChange={(e) => {
+                                                    e.target.value = e.target.value.replace(/\s+/g, '');
+                                                }}
+                                            />
+                                            <Button
+                                                size="sm"
+                                                className="bg-purple-600 hover:bg-purple-700"
+                                                onClick={() => {
+                                                    const input = document.getElementById('newUsernameInput');
+                                                    handleUpdateUsername(editUser.id, input.value);
+                                                }}
+                                            >
+                                                <Save size={14} />
+                                            </Button>
+                                        </div>
+                                        <p className="text-[10px] text-gray-500 mt-1">
+                                            Permitido: letras/números/underline (3–32). Sem espaços.
+                                        </p>
+                                    </div>
 
                                     <div className="bg-gray-800 p-3 rounded border border-gray-700 mt-2">
                                         <label className="flex items-center gap-2 cursor-pointer">
