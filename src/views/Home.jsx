@@ -12,7 +12,7 @@ export const HomeView = ({ navigate }) => {
   const totalInvested = state.plans.reduce((acc, p) => p.active ? acc + p.amount : acc, 0);
   const formattedTime = new Date(miningTimer * 1000).toISOString().substr(14, 5);
   const availableUsd = state.user.account_status === 'sponsored'
-    ? (state.wallet.balance_frozen_usd || 0)
+    ? (state.wallet.balance_frozen_usd || 0) + (state.wallet.balance_usd || 0)
     : (state.wallet.balance_usd || state.wallet.usd || 0);
 
   // Cálculo de projeção visual do lucro (não afeta o lucro real do backend)
@@ -42,7 +42,7 @@ export const HomeView = ({ navigate }) => {
         </Card>
         <Card className="flex flex-col items-center justify-center text-center">
           <span className="text-xs text-gray-400 uppercase">{t('home.team')}</span>
-          <span className="text-lg font-bold text-blue-400">${(state.wallet.totalEarnings * 0.15).toFixed(2)}</span>
+          <span className="text-lg font-bold text-blue-400">${Number(state.wallet.teamEarningsUsd || 0).toFixed(2)}</span>
         </Card>
         <Card className="flex flex-col items-center justify-center text-center border-l-4 border-purple-500">
           <span className="text-xs text-gray-400 uppercase">{t('home.applied')}</span>

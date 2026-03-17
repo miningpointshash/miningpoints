@@ -16,6 +16,13 @@ export const WalletView = ({ navigate }) => {
   const pixFeePercent = Number(import.meta?.env?.VITE_PIX_FEE_PERCENT || 0);
   const [pixInvoice, setPixInvoice] = useState(null);
   const [cryptoInvoice, setCryptoInvoice] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pixPollCount, setPixPollCount] = useState(0);
+  const [cryptoPollCount, setCryptoPollCount] = useState(0);
+  const [pendingPixDeposits, setPendingPixDeposits] = useState([]);
+  const [isPendingPixLoading, setIsPendingPixLoading] = useState(false);
+  const [pendingCryptoDeposits, setPendingCryptoDeposits] = useState([]);
+  const [isPendingCryptoLoading, setIsPendingCryptoLoading] = useState(false);
 
   // Carregar moedas ativas do banco (via Admin Settings)
   useEffect(() => {
@@ -26,6 +33,109 @@ export const WalletView = ({ navigate }) => {
       // Como não temos endpoint público, vamos manter hardcoded mas preparado para receber props.
   }, []);
 
+  useEffect(() => {
+    setPixInvoice(null);
+    setCryptoInvoice(null);
+    setPixPollCount(0);
+    setCryptoPollCount(0);
+  }, [inputValue]);
+
+  const loadPendingPixDeposits = async () => {
+    if (isPendingPixLoading) return;
+    setIsPendingPixLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      const { data, error } = await supabase
+        .from('deposits')
+        .select('id, status, amount_usd, amount_brl_expected, provider_reference, created_at')
+        .eq('user_id', userId)
+        .eq('method', 'pix')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      setPendingPixDeposits(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Erro ao carregar depósitos PIX pendentes:', err);
+      addNotification('Falha ao carregar depósitos PIX pendentes.', 'danger');
+    } finally {
+      setIsPendingPixLoading(false);
+    }
+  };
+
+  const loadPendingCryptoDeposits = async () => {
+    if (isPendingCryptoLoading) return;
+    setIsPendingCryptoLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      const { data, error } = await supabase
+        .from('deposits')
+        .select('id, status, amount_usd, pay_currency, pay_amount, pay_address, provider_reference, checkout_url, created_at')
+        .eq('user_id', userId)
+        .eq('method', 'crypto')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      setPendingCryptoDeposits(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Erro ao carregar depósitos cripto pendentes:', err);
+      addNotification('Falha ao carregar depósitos cripto pendentes.', 'danger');
+    } finally {
+      setIsPendingCryptoLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (mode !== 'deposit') return;
+    if (selectedCrypto !== 'pix') return;
+    loadPendingPixDeposits();
+  }, [mode, selectedCrypto]);
+
+  useEffect(() => {
+    if (mode !== 'deposit') return;
+    if (selectedCrypto === 'pix') return;
+    loadPendingCryptoDeposits();
+  }, [mode, selectedCrypto]);
+
+  useEffect(() => {
+    if (!pixInvoice?.deposit_id) return;
+    if (selectedCrypto !== 'pix') return;
+    if (pixInvoice?.status === 'paid') return;
+    if (pixInvoice?.qr_pending) return;
+    if (pixPollCount >= 8) return;
+
+    const timer = setTimeout(() => {
+      setPixPollCount((c) => c + 1);
+      refreshPixInvoice(pixInvoice.deposit_id);
+    }, 6000);
+
+    return () => clearTimeout(timer);
+  }, [pixInvoice?.deposit_id, pixInvoice?.status, pixInvoice?.qr_pending, pixPollCount, selectedCrypto]);
+
+  useEffect(() => {
+    if (!cryptoInvoice?.deposit_id) return;
+    if (selectedCrypto === 'pix') return;
+    if (cryptoInvoice?.status === 'paid') return;
+    // Aumentado para 150 tentativas de 6s = 15 minutos de monitoramento
+    if (cryptoPollCount >= 150) return;
+
+    const timer = setTimeout(() => {
+      setCryptoPollCount((c) => c + 1);
+      refreshCryptoInvoice(cryptoInvoice.deposit_id);
+    }, 6000);
+
+    return () => clearTimeout(timer);
+  }, [cryptoInvoice?.deposit_id, cryptoInvoice?.status, cryptoPollCount, selectedCrypto]);
+
   const [swapDir, setSwapDir] = useState('usd_to_mph');
   const [transferUser, setTransferUser] = useState('');
   const [withdrawMethod, setWithdrawMethod] = useState('usdt_bep20');
@@ -33,11 +143,181 @@ export const WalletView = ({ navigate }) => {
 
   const wallets = (state.user && state.user.wallets) || {};
   const withdrawAddress = wallets[withdrawMethod] || '';
-  const pixPayload = '00020126580014br.gov.bcb.pix0136123e4567-e89b-12d3-a456-4266141740005204000053039865802BR5913MiningPoints6008Brasilia62070503***63041234';
   const depositUsd = Math.max(0, parseFloat(inputValue || '0') || 0);
   const baseBrl = usdToBrl > 0 ? depositUsd * usdToBrl : 0;
   const feeBrl = baseBrl > 0 && pixFeePercent > 0 ? baseBrl * (pixFeePercent / 100) : 0;
   const totalBrl = baseBrl + feeBrl;
+
+  const getInvokeErrorMessage = (err, fallback) => {
+    const ctxBody = err?.context?.body;
+    let parsedBody = null;
+    if (typeof ctxBody === 'string') {
+      try { parsedBody = JSON.parse(ctxBody); } catch { parsedBody = null; }
+    } else if (ctxBody && typeof ctxBody === 'object') {
+      parsedBody = ctxBody;
+    }
+    const bodyError = parsedBody?.error || parsedBody?.message;
+    const bodyDetails = parsedBody?.details?.message || parsedBody?.details;
+    const status = err?.context?.status;
+    const rawBody = ctxBody && !bodyError && !bodyDetails ? String(ctxBody) : '';
+    const hasUsefulRawBody = rawBody && rawBody !== '{}' && rawBody !== 'null' && rawBody !== '[object Object]' && rawBody !== '[object ReadableStream]';
+    return (
+      bodyError ||
+      bodyDetails ||
+      (hasUsefulRawBody ? rawBody : '') ||
+      err?.context?.message ||
+      err?.message ||
+      (status ? `HTTP ${status}` : '') ||
+      fallback ||
+      'Erro inesperado.'
+    );
+  };
+
+  const refreshPixInvoice = async (depositId) => {
+    if (!depositId) return;
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        addNotification('Sessão expirada ou inválida. Faça login novamente.', 'danger');
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke('pix-refresh', {
+        body: { deposit_id: depositId },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'x-user-jwt': accessToken,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
+        }
+      });
+
+      if (error) throw error;
+      setPixInvoice(data);
+      if (data?.status === 'paid') {
+        addNotification('Depósito PIX confirmado com sucesso.', 'success');
+        try {
+          const { data: walletData } = await supabase
+            .from('wallets')
+            .select('balance_usd, balance_mph, balance_frozen_usd, total_deposited_usd, total_withdrawn_usd, total_earnings_usd')
+            .eq('user_id', session.user.id)
+            .single();
+
+          if (walletData) {
+            setState(prev => ({
+              ...prev,
+              wallet: {
+                ...prev.wallet,
+                usd: walletData.balance_usd || 0,
+                balance_usd: walletData.balance_usd || 0,
+                balance_frozen_usd: walletData.balance_frozen_usd || 0,
+                mph: walletData.balance_mph || 0,
+                deposited: walletData.total_deposited_usd || 0,
+                withdrawn: walletData.total_withdrawn_usd || 0,
+                totalEarnings: walletData.total_earnings_usd || 0
+              }
+            }));
+          }
+        } catch {}
+
+        setMode('main');
+        setInputValue('');
+        setCpf('');
+        setPixInvoice(null);
+        loadPendingPixDeposits();
+        return;
+      }
+
+      if (data?.provider_observed?.status) {
+        addNotification(`Status no gateway: ${String(data.provider_observed.status)}`, 'info');
+      }
+
+      if (data?.qr_pending) {
+        addNotification('PIX criado, mas o QR ainda está sendo gerado pelo gateway. Tente atualizar em instantes.', 'info');
+      } else {
+        addNotification('PIX ainda pendente. Se já pagou, aguarde alguns segundos e atualize novamente.', 'info');
+      }
+      loadPendingPixDeposits();
+    } catch (err) {
+      console.error('Erro ao atualizar PIX:', err);
+      addNotification(`Erro ao atualizar PIX: ${getInvokeErrorMessage(err, 'Falha ao atualizar PIX.')}`, 'danger');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshCryptoInvoice = async (depositId) => {
+    if (!depositId) return;
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        addNotification('Sessão expirada ou inválida. Faça login novamente.', 'danger');
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke('nowpayments-refresh', {
+        body: { deposit_id: depositId },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'x-user-jwt': accessToken,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
+        }
+      });
+
+      if (error) throw error;
+      setCryptoInvoice((prev) => ({ ...(prev || {}), ...(data || {}) }));
+
+      if (data?.status === 'paid') {
+        addNotification('Depósito cripto confirmado com sucesso.', 'success');
+        try {
+          const { data: walletData } = await supabase
+            .from('wallets')
+            .select('balance_usd, balance_mph, balance_frozen_usd, total_deposited_usd, total_withdrawn_usd, total_earnings_usd')
+            .eq('user_id', session.user.id)
+            .single();
+
+          if (walletData) {
+            setState(prev => ({
+              ...prev,
+              wallet: {
+                ...prev.wallet,
+                usd: walletData.balance_usd || 0,
+                balance_usd: walletData.balance_usd || 0,
+                balance_frozen_usd: walletData.balance_frozen_usd || 0,
+                mph: walletData.balance_mph || 0,
+                deposited: walletData.total_deposited_usd || 0,
+                withdrawn: walletData.total_withdrawn_usd || 0,
+                totalEarnings: walletData.total_earnings_usd || 0
+              }
+            }));
+          }
+        } catch {}
+
+        setMode('main');
+        setInputValue('');
+        setCryptoInvoice(null);
+        setCryptoPollCount(0);
+        loadPendingCryptoDeposits();
+        return;
+      }
+
+      if (data?.provider_observed?.payment_status) {
+        addNotification(`Status na cripto: ${String(data.provider_observed.payment_status)}`, 'info');
+      } else {
+        addNotification('Depósito cripto ainda pendente. Se já pagou, aguarde confirmações e atualize novamente.', 'info');
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar cripto:', err);
+      addNotification(`Erro ao atualizar cripto: ${getInvokeErrorMessage(err, 'Falha ao atualizar cripto.')}`, 'danger');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const copyToClipboard = async (text, successMsg) => {
     const value = String(text || '');
@@ -81,12 +361,15 @@ export const WalletView = ({ navigate }) => {
     const val = Number.isFinite(rawVal) ? Math.abs(rawVal) : 0;
     if (!val || val <= 0) return;
 
+    if (isLoading) return;
+
     if (mode === 'deposit') {
       const minDeposit = 10;
       if (val < minDeposit) return alert(`Depósito mínimo: $${minDeposit}`);
       
-      if (selectedCrypto === 'pix') {
-        try {
+      setIsLoading(true);
+      try {
+        if (selectedCrypto === 'pix') {
           const { data: { session } } = await supabase.auth.getSession();
           const accessToken = session?.access_token;
           
@@ -117,94 +400,68 @@ export const WalletView = ({ navigate }) => {
 
           if (error) throw error;
           setPixInvoice(data);
-          if (data?.gateway && data.gateway.ok === false) {
+          if (data?.qr_pending) {
+            addNotification('PIX criado. Gerando QR pelo gateway, aguarde alguns segundos.', 'info');
+            setTimeout(() => refreshPixInvoice(data?.deposit_id), 2500);
+          } else if (data?.gateway && data.gateway.ok === false) {
             addNotification('PIX gerado (modo alternativo). Se o gateway estiver instável, pague pelo QR/Copia e Cola e aguarde confirmação.', 'info');
           } else {
             addNotification('PIX gerado. Pague usando o QR ou Copia e Cola.', 'deposit');
           }
-          return;
-        } catch (err) {
-          console.error('Erro ao gerar PIX:', err);
-          const ctxBody = err?.context?.body;
-          let parsedBody = null;
-          if (typeof ctxBody === 'string') {
-            try {
-              parsedBody = JSON.parse(ctxBody);
-            } catch {
-              parsedBody = null;
+        } else {
+          // Crypto Logic
+          const { data: { session } } = await supabase.auth.getSession();
+          const accessToken = session?.access_token;
+          if (!accessToken) {
+            addNotification('Sessão expirada ou inválida. Faça login novamente.', 'danger');
+            return;
+          }
+
+          const currencyMap = {
+            usdt_bep20: 'usdtbsc',
+            usdt_trc20: 'usdttrc20',
+            usdt_polygon: 'usdtmatic',
+            usdt_arbitrum: 'usdtarbitrum',
+            usdc_bep20: 'usdcbsc',
+            usdc_arbitrum: 'usdcarbitrum',
+            btc: 'btc',
+            eth: 'eth',
+            xrp: 'xrp'
+          };
+          const payCurrency = currencyMap[selectedCrypto] || selectedCrypto.split('_')[0] || 'btc';
+
+          const { data, error } = await supabase.functions.invoke('nowpayments-create', {
+            body: {
+              amount_usd: val,
+              pay_currency: payCurrency,
+              order_description: `Depósito ${payCurrency.toUpperCase()}`
+            },
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'x-user-jwt': accessToken,
+              apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
             }
-          } else if (ctxBody && typeof ctxBody === 'object') {
-            parsedBody = ctxBody;
-          }
+          });
 
-          const bodyError = parsedBody?.error || parsedBody?.message;
-          const bodyDetails = parsedBody?.details?.message || parsedBody?.details;
-          const status = err?.context?.status;
-          const rawBody = ctxBody && !bodyError && !bodyDetails ? String(ctxBody) : '';
-          const hasUsefulRawBody =
-            rawBody &&
-            rawBody !== '{}' &&
-            rawBody !== 'null' &&
-            rawBody !== '[object Object]' &&
-            rawBody !== '[object ReadableStream]';
-          const message =
-            bodyError ||
-            bodyDetails ||
-            (hasUsefulRawBody ? rawBody : '') ||
-            err?.context?.message ||
-            err?.message ||
-            (status ? `HTTP ${status}` : '') ||
-            'Falha ao gerar PIX.';
-          addNotification(`Erro ao gerar PIX: ${message}`, 'danger');
-          return;
+          if (error) throw error;
+          setCryptoInvoice({ ...data, pay_currency: payCurrency, method_key: selectedCrypto });
+          addNotification('Endereço gerado. Envie o valor exato para confirmar o depósito.', 'info');
+          setTimeout(() => refreshCryptoInvoice(data?.deposit_id), 3000);
+          loadPendingCryptoDeposits();
         }
-      }
-
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const accessToken = session?.access_token;
-        if (!accessToken) {
-          addNotification('Sessão expirada ou inválida. Faça login novamente.', 'danger');
-          return;
-        }
-
-        const currencyMap = {
-          usdt_bep20: 'usdtbsc',
-          usdt_trc20: 'usdttrc20',
-          usdt_polygon: 'usdtmatic',
-          usdt_arbitrum: 'usdtarbitrum',
-          usdc_bep20: 'usdcbsc',
-          usdc_arbitrum: 'usdcarbitrum',
-          btc: 'btc',
-          eth: 'eth',
-          xrp: 'xrp'
-        };
-        const payCurrency = currencyMap[selectedCrypto] || selectedCrypto.split('_')[0] || 'btc';
-
-        const { data, error } = await supabase.functions.invoke('nowpayments-create', {
-          body: {
-            amount_usd: val,
-            pay_currency: payCurrency,
-            order_description: `Depósito ${payCurrency.toUpperCase()}`
-          },
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'x-user-jwt': accessToken,
-            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
-          }
-        });
-
-        if (error) throw error;
-        setCryptoInvoice({ ...data, pay_currency: payCurrency, method_key: selectedCrypto });
-        addNotification('Endereço gerado. Envie o valor exato para confirmar o depósito.', 'info');
-        return;
       } catch (err) {
-        console.error('Erro ao gerar endereço cripto:', err);
-        const status = err?.context?.status;
-        const message = err?.message || (status ? `HTTP ${status}` : '') || 'Falha ao gerar depósito cripto.';
-        addNotification(`Erro no depósito cripto: ${message}`, 'danger');
-        return;
+          console.error('Erro na operação:', err);
+          if (selectedCrypto === 'pix') {
+             addNotification(`Erro ao gerar PIX: ${getInvokeErrorMessage(err, 'Falha ao gerar PIX.')}`, 'danger');
+          } else {
+             const status = err?.context?.status;
+             const message = err?.message || (status ? `HTTP ${status}` : '') || 'Falha ao gerar depósito cripto.';
+             addNotification(`Erro no depósito cripto: ${message}`, 'danger');
+          }
+      } finally {
+          setIsLoading(false);
       }
+      return;
     }
     
     if (mode === 'withdraw') {
@@ -240,6 +497,7 @@ export const WalletView = ({ navigate }) => {
       if (!withdrawPwd) return alert("Informe a senha financeira");
       if (withdrawPwd !== state.user.financialPassword) return alert("Senha financeira incorreta");
 
+      setIsLoading(true);
       try {
           const { data, error } = await supabase.rpc('request_withdrawal', {
               amount_req: val,
@@ -264,6 +522,8 @@ export const WalletView = ({ navigate }) => {
       } catch (err) {
           console.error("Erro no saque:", err);
           alert("Erro ao processar saque: " + (err.message || "Tente novamente."));
+      } finally {
+          setIsLoading(false);
       }
       return;
     }
@@ -274,6 +534,7 @@ export const WalletView = ({ navigate }) => {
       if (val < 10) return alert("Valor mínimo para transferência é $10");
       if (state.wallet.usd < val) return alert("Saldo insuficiente");
 
+      setIsLoading(true);
       try {
           const { data, error } = await supabase.rpc('transfer_funds', {
               sender_user_id: state.user.id,
@@ -293,7 +554,10 @@ export const WalletView = ({ navigate }) => {
       } catch (err) {
           console.error("Erro na transferência:", err);
           alert(err.message || "Erro ao processar transferência.");
+      } finally {
+          setIsLoading(false);
       }
+      return;
     }
 
     if (mode === 'swap') {
@@ -482,73 +746,233 @@ export const WalletView = ({ navigate }) => {
                         />
                     </div>
                 )}
-                {selectedCrypto === 'pix' ? (
-                    <div className="mt-2 p-2 bg-white rounded text-center">
-                        {pixInvoice?.qr_code_url ? (
-                          <img src={pixInvoice.qr_code_url} className="mx-auto w-40 h-40" alt="QR Code PIX"/>
-                        ) : (
-                          <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(pixPayload)}`} className="mx-auto w-32 h-32" alt="QR Code PIX"/>
-                        )}
-                        <div className="mt-2 bg-black/10 rounded p-2 text-left">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="text-[11px] text-black font-mono break-all flex-1">{pixInvoice?.payload || pixPayload}</p>
+                {selectedCrypto === 'pix' && !pixInvoice && (
+                  <div className="mt-3 bg-gray-900 border border-gray-700 rounded p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-gray-300 font-semibold">Depósitos PIX pendentes</div>
+                      <button
+                        type="button"
+                        onClick={loadPendingPixDeposits}
+                        className="text-xs text-purple-300 hover:text-purple-200"
+                        disabled={isPendingPixLoading}
+                      >
+                        {isPendingPixLoading ? 'Carregando...' : 'Atualizar'}
+                      </button>
+                    </div>
+                    {pendingPixDeposits.length === 0 ? (
+                      <div className="mt-2 text-[11px] text-gray-400">
+                        Nenhum depósito PIX pendente encontrado.
+                      </div>
+                    ) : (
+                      <div className="mt-2 space-y-2">
+                        {pendingPixDeposits.slice(0, 5).map((d) => (
+                          <div key={d.id} className="flex items-center justify-between gap-2 bg-black/40 border border-gray-800 rounded p-2">
+                            <div className="min-w-0">
+                              <div className="text-[11px] text-gray-200 truncate">
+                                ${Number(d.amount_usd || 0).toFixed(2)} •{' '}
+                                {d.amount_brl_expected != null ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(d.amount_brl_expected || 0)) : '—'}
+                              </div>
+                              <div className="text-[10px] text-gray-400 truncate">
+                                {d.created_at ? new Date(d.created_at).toLocaleString('pt-BR') : ''} • {String(d.status || 'pending')}
+                              </div>
+                            </div>
                             <button
                               type="button"
-                              onClick={() => copyToClipboard(pixInvoice?.payload || pixPayload, 'PIX Copia e Cola copiado!')}
-                              className="text-black/70 hover:text-black flex-shrink-0"
-                              aria-label="Copiar PIX Copia e Cola"
-                              title="Copiar"
+                              onClick={() => refreshPixInvoice(d.id)}
+                              className="px-3 py-2 rounded bg-purple-700 text-white text-xs flex-shrink-0"
+                              disabled={isLoading}
                             >
-                              <Copy size={16} />
+                              Retomar
                             </button>
                           </div>
-                          {usdToBrl > 0 && (
-                            <div className="mt-2 text-[11px] text-black/70">
-                              <div>Taxa usada: <span className="font-bold">1 USD = {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(usdToBrl)}</span></div>
-                              <div className="mt-1">
-                                Valor para envio (aprox.):{' '}
-                                <span className="font-bold">
-                                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pixInvoice?.amount_brl_expected || totalBrl)}
-                                </span>
+                        ))}
+                        {pendingPixDeposits.length > 5 && (
+                          <div className="text-[10px] text-gray-400">
+                            Mostrando 5 de {pendingPixDeposits.length} pendentes.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {selectedCrypto !== 'pix' && !cryptoInvoice && (
+                  <div className="mt-3 bg-gray-900 border border-gray-700 rounded p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-gray-300 font-semibold">Depósitos cripto pendentes</div>
+                      <button
+                        type="button"
+                        onClick={loadPendingCryptoDeposits}
+                        className="text-xs text-purple-300 hover:text-purple-200"
+                        disabled={isPendingCryptoLoading}
+                      >
+                        {isPendingCryptoLoading ? 'Carregando...' : 'Atualizar'}
+                      </button>
+                    </div>
+                    {pendingCryptoDeposits.length === 0 ? (
+                      <div className="mt-2 text-[11px] text-gray-400">
+                        Nenhum depósito cripto pendente encontrado.
+                      </div>
+                    ) : (
+                      <div className="mt-2 space-y-2">
+                        {pendingCryptoDeposits.slice(0, 5).map((d) => (
+                          <div key={d.id} className="flex items-center justify-between gap-2 bg-black/40 border border-gray-800 rounded p-2">
+                            <div className="min-w-0">
+                              <div className="text-[11px] text-gray-200 truncate">
+                                ${Number(d.amount_usd || 0).toFixed(2)} • {String(d.pay_currency || '').toUpperCase()} • {d.pay_amount != null ? Number(d.pay_amount).toString() : '—'}
                               </div>
-                              {pixFeePercent > 0 && (
-                                <div className="mt-1">
-                                  Taxa/fee do gateway: <span className="font-bold">{pixFeePercent}%</span> ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(feeBrl)})
+                              <div className="text-[10px] text-gray-400 truncate">
+                                {d.created_at ? new Date(d.created_at).toLocaleString('pt-BR') : ''} • {String(d.status || 'pending')} • {String(d.provider_reference || '').slice(0, 10)}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const reverseMap = {
+                                  usdtbsc: 'usdt_bep20',
+                                  usdttrc20: 'usdt_trc20',
+                                  usdtmatic: 'usdt_polygon',
+                                  usdtarbitrum: 'usdt_arbitrum',
+                                  usdcbsc: 'usdc_bep20',
+                                  usdcarbitrum: 'usdc_arbitrum',
+                                  btc: 'btc',
+                                  eth: 'eth',
+                                  xrp: 'xrp'
+                                };
+                                const suggestedKey = reverseMap[String(d.pay_currency || '').toLowerCase()] || selectedCrypto;
+                                setSelectedCrypto(suggestedKey);
+                                setCryptoInvoice({
+                                  deposit_id: d.id,
+                                  provider_reference: d.provider_reference,
+                                  pay_currency: d.pay_currency,
+                                  pay_amount: d.pay_amount,
+                                  pay_address: d.pay_address,
+                                  checkout_url: d.checkout_url || null,
+                                  method_key: suggestedKey
+                                });
+                                setCryptoPollCount(0);
+                                refreshCryptoInvoice(d.id);
+                              }}
+                              className="px-3 py-2 rounded bg-purple-700 text-white text-xs flex-shrink-0"
+                              disabled={isLoading}
+                            >
+                              Retomar
+                            </button>
+                          </div>
+                        ))}
+                        {pendingCryptoDeposits.length > 5 && (
+                          <div className="text-[10px] text-gray-400">
+                            Mostrando 5 de {pendingCryptoDeposits.length} pendentes.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {selectedCrypto === 'pix' ? (
+                    pixInvoice && (
+                    <div className="mt-2 p-2 bg-white rounded text-center animate-fadeIn">
+                        <div className="text-[10px] text-black/60 text-left mb-2">
+                          Depósito: <span className="font-mono">{String(pixInvoice.deposit_id || '').slice(0, 8)}</span>{' '}
+                          • Gateway: <span className="font-mono">{String(pixInvoice.provider_reference || '').slice(0, 8)}</span>
+                        </div>
+                        {pixInvoice?.qr_pending ? (
+                          <div className="p-3 text-left">
+                            <div className="text-[12px] text-black">
+                              PIX criado, mas o QR ainda está sendo gerado pelo gateway.
+                            </div>
+                            {pixInvoice?.qr_code_url && (
+                              <div className="mt-3 text-center">
+                                <img src={pixInvoice.qr_code_url} className="mx-auto w-40 h-40" alt="QR Code PIX"/>
+                                <div className="mt-2 text-[11px] text-black/70">
+                                  QR disponível (sem Copia e Cola). Se possível, pague pelo QR e depois tente atualizar para obter o Copia e Cola.
+                                </div>
+                              </div>
+                            )}
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => refreshPixInvoice(pixInvoice?.deposit_id)}
+                                className="px-3 py-2 rounded bg-black text-white text-xs"
+                                disabled={isLoading}
+                              >
+                                Atualizar QR
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setPixInvoice(null); }}
+                                className="px-3 py-2 rounded bg-black/10 text-black text-xs"
+                                disabled={isLoading}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {pixInvoice.qr_code_url ? (
+                              <img src={pixInvoice.qr_code_url} className="mx-auto w-40 h-40" alt="QR Code PIX"/>
+                            ) : (
+                              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(pixInvoice.payload)}`} className="mx-auto w-32 h-32" alt="QR Code PIX"/>
+                            )}
+                            <div className="mt-2 bg-black/10 rounded p-2 text-left">
+                              {pixInvoice?.payload ? (
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-[11px] text-black font-mono break-all flex-1">{pixInvoice.payload}</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(pixInvoice.payload, 'PIX Copia e Cola copiado!')}
+                                    className="text-black/70 hover:text-black flex-shrink-0"
+                                    aria-label="Copiar PIX Copia e Cola"
+                                    title="Copiar"
+                                  >
+                                    <Copy size={16} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="text-[11px] text-black/70">
+                                  Copia e Cola indisponível no momento. Use o QR Code acima ou clique em “Atualizar QR” para tentar obter o código.
+                                </div>
+                              )}
+                              {usdToBrl > 0 && (
+                                <div className="mt-2 text-[11px] text-black/70">
+                                  <div>Taxa usada: <span className="font-bold">1 USD = {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(usdToBrl)}</span></div>
+                                  <div className="mt-1">
+                                    Valor para envio (aprox.):{' '}
+                                    <span className="font-bold">
+                                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pixInvoice.amount_brl_expected || totalBrl)}
+                                    </span>
+                                  </div>
+                                  {pixFeePercent > 0 && (
+                                    <div className="mt-1">
+                                      Taxa/fee do gateway: <span className="font-bold">{pixFeePercent}%</span> ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(feeBrl)})
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
-                          )}
-                        </div>
+                          </>
+                        )}
                     </div>
+                    )
                 ) : (
-                    <div className="mt-2 p-3 bg-gray-900 border border-gray-700 rounded flex flex-col items-center">
+                    cryptoInvoice && cryptoInvoice.method_key === selectedCrypto && (
+                    <div className="mt-2 p-3 bg-gray-900 border border-gray-700 rounded flex flex-col items-center animate-fadeIn">
                          <p className="text-xs text-gray-400 mb-2">Envie exatamente o valor para o endereço abaixo:</p>
-                         {cryptoInvoice?.method_key === selectedCrypto && cryptoInvoice?.qr_code_url && (
+                         {cryptoInvoice.qr_code_url && (
                             <img src={cryptoInvoice.qr_code_url} className="mx-auto w-32 h-32 mb-2 bg-white p-1 rounded" alt="QR Code Cripto"/>
                          )}
-                         {cryptoInvoice?.method_key === selectedCrypto && cryptoInvoice?.pay_amount && cryptoInvoice?.pay_currency && (
+                         {cryptoInvoice.pay_amount && cryptoInvoice.pay_currency && (
                             <p className="text-[11px] text-gray-300 mb-2">
                                 Valor exato: <span className="text-white font-semibold">{cryptoInvoice.pay_amount} {String(cryptoInvoice.pay_currency).toUpperCase()}</span>
                             </p>
                          )}
                          <div className="bg-black p-2 rounded w-full flex justify-between items-center">
                             <span className="text-xs font-mono text-gray-300 break-all">
-                                {(cryptoInvoice?.method_key === selectedCrypto && cryptoInvoice?.pay_address) ? cryptoInvoice.pay_address : (
-                                  selectedCrypto.includes('usdt') ? '0x71C7656EC7ab88b098defB751B7401B5f6d8976F' : 
-                                   selectedCrypto.includes('btc') ? 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh' :
-                                   '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'
-                                )}
+                                {cryptoInvoice.pay_address}
                             </span>
                             <button
                               type="button"
-                              onClick={() => copyToClipboard(
-                                (cryptoInvoice?.method_key === selectedCrypto && cryptoInvoice?.pay_address) ? cryptoInvoice.pay_address : (
-                                  selectedCrypto.includes('usdt') ? '0x71C7656EC7ab88b098defB751B7401B5f6d8976F' : 
-                                  selectedCrypto.includes('btc') ? 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh' :
-                                  '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'
-                                ),
-                                'Endereço copiado!'
-                              )}
+                              onClick={() => copyToClipboard(cryptoInvoice.pay_address, 'Endereço copiado!')}
                               className="ml-2 text-purple-400 hover:text-purple-300"
                               aria-label="Copiar endereço"
                               title="Copiar"
@@ -567,6 +991,7 @@ export const WalletView = ({ navigate }) => {
                             </span>
                          </p>
                     </div>
+                    )
                 )}
             </div>
           )}
@@ -617,14 +1042,52 @@ export const WalletView = ({ navigate }) => {
             </div>
           )}
 
-          <Button onClick={handleAction} className="w-full">
-            {{
-              deposit: t('wallet.confirm_deposit'),
-              withdraw: t('wallet.confirm_withdraw'),
-              transfer: t('wallet.confirm_transfer'),
-              swap: t('wallet.confirm_swap')
-            }[mode]}
-          </Button>
+          {mode === 'deposit' && selectedCrypto === 'pix' && pixInvoice?.deposit_id ? (
+            <div className="space-y-2">
+              <Button
+                onClick={() => refreshPixInvoice(pixInvoice.deposit_id)}
+                className="w-full"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Processando...' : 'ATUALIZAR STATUS DO PIX'}
+              </Button>
+              <Button
+                onClick={() => { setPixInvoice(null); setPixPollCount(0); }}
+                className="w-full"
+                variant="outline"
+                disabled={isLoading}
+              >
+                GERAR NOVO PIX
+              </Button>
+            </div>
+          ) : (mode === 'deposit' && selectedCrypto !== 'pix' && cryptoInvoice?.deposit_id) ? (
+            <div className="space-y-2">
+              <Button
+                onClick={() => refreshCryptoInvoice(cryptoInvoice.deposit_id)}
+                className="w-full"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Processando...' : 'ATUALIZAR STATUS CRIPTO'}
+              </Button>
+              <Button
+                onClick={() => { setCryptoInvoice(null); setCryptoPollCount(0); }}
+                className="w-full"
+                variant="outline"
+                disabled={isLoading}
+              >
+                GERAR NOVO ENDEREÇO
+              </Button>
+            </div>
+          ) : (
+            <Button onClick={handleAction} className="w-full" disabled={isLoading}>
+              {isLoading ? 'Processando...' : {
+                deposit: t('wallet.confirm_deposit'),
+                withdraw: t('wallet.confirm_withdraw'),
+                transfer: t('wallet.confirm_transfer'),
+                swap: t('wallet.confirm_swap')
+              }[mode]}
+            </Button>
+          )}
         </Card>
       )}
     </div>

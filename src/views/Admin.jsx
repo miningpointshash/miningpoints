@@ -138,23 +138,33 @@ const NetworkViewer = ({ userId, username, onClose }) => {
                                                     ) : (
                                                         <div className="grid grid-cols-1 gap-2">
                                                             {users.map(u => (
-                                                                <div key={u.id} className="flex justify-between items-center bg-white/5 p-2 rounded hover:bg-white/10 transition">
+                                                                <div key={u.user_id} className="flex justify-between items-center bg-white/5 p-2 rounded hover:bg-white/10 transition">
                                                                     <div>
                                                                         <p className="text-xs font-bold text-white flex items-center gap-2">
                                                                             {u.username}
                                                                             <span className={`text-[9px] px-1 rounded border ${
-                                                                                u.account_status === 'active' ? 'border-green-500 text-green-400' : 
-                                                                                u.account_status === 'sponsored' ? 'border-blue-500 text-blue-400' :
+                                                                                u.status === 'active' ? 'border-green-500 text-green-400' : 
+                                                                                u.status === 'sponsored' ? 'border-blue-500 text-blue-400' :
                                                                                 'border-red-500 text-red-400'
                                                                             }`}>
-                                                                                {u.account_status === 'active' ? 'ATIVO' : u.account_status === 'sponsored' ? 'PATROCINADO' : 'INATIVO'}
+                                                                                {u.status === 'active' ? 'ATIVO' : u.status === 'sponsored' ? 'PATROCINADO' : 'INATIVO'}
                                                                             </span>
+                                                                            {u.is_eligible_plans && (
+                                                                                <span className="text-[9px] px-1 rounded border border-green-500/40 text-green-400 bg-green-900/10">
+                                                                                    PLANO
+                                                                                </span>
+                                                                            )}
+                                                                            {u.is_eligible_pvp && (
+                                                                                <span className="text-[9px] px-1 rounded border border-pink-500/40 text-pink-400 bg-pink-900/10">
+                                                                                    PVP
+                                                                                </span>
+                                                                            )}
                                                                         </p>
-                                                                        <p className="text-[10px] text-gray-500">Entrou em: {new Date(u.created_at).toLocaleDateString()}</p>
+                                                                        <p className="text-[10px] text-gray-500">Entrou em: {new Date(u.joined_at).toLocaleDateString()}</p>
                                                                     </div>
                                                                     <div className="text-right">
                                                                         <p className="text-[10px] text-gray-400">Vol: <span className="text-white">${u.personal_volume || 0}</span></p>
-                                                                        <p className="text-[10px] text-gray-400">Linhas: <span className="text-white">{u.active_lines_count || 0}</span></p>
+                                                                        <p className="text-[10px] text-gray-400">Linhas: <span className="text-white">{u.active_lines || 0}</span></p>
                                                                     </div>
                                                                 </div>
                                                             ))}
@@ -349,7 +359,7 @@ export const AdminView = ({ navigate }) => {
                 .from('profiles')
                 .select(`
                     *,
-                    wallets ( balance_usd, balance_mph, balance_frozen_usd )
+                    wallets ( balance_usd, balance_mph, balance_frozen_usd, total_deposited_usd, total_withdrawn_usd, total_earnings_usd )
                 `)
                 .order('created_at', { ascending: false });
 

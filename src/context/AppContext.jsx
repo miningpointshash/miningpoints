@@ -31,6 +31,7 @@ const INITIAL_STATE = {
     balance_frozen_usd: 0,
     mph: 0,
     deposited: 0,
+    teamEarningsUsd: 0,
     totalEarnings: 0,
     withdrawn: 0
   },
@@ -134,7 +135,7 @@ export const AppProvider = ({ children }) => {
             }
 
             // Busca perfil, carteira e planos em paralelo
-            let [profileRes, walletRes, plansRes, txRes, roiRes] = await Promise.all([
+            let [profileRes, walletRes, plansRes, txRes, roiRes, teamEarnRes] = await Promise.all([
                 supabase.from('profiles').select('*').eq('id', userId).single(),
                 supabase.from('wallets').select('*').eq('user_id', userId).single(),
                 supabase.from('plans').select('*').eq('user_id', userId),
@@ -151,7 +152,8 @@ export const AppProvider = ({ children }) => {
                     .eq('type', 'daily_roi')
                     .eq('status', 'completed')
                     .order('created_at', { ascending: false })
-                    .limit(50)
+                    .limit(50),
+                supabase.rpc('get_network_earnings_summary', { target_user_id: userId })
             ]);
 
             let profile = profileRes.data;
@@ -159,6 +161,11 @@ export const AppProvider = ({ children }) => {
             let dbPlans = plansRes.data || [];
             const dbTxs = txRes.data || [];
             const dbRoiTxs = roiRes.data || [];
+
+            const teamEarnData = teamEarnRes?.data;
+            const teamEarningsUsd = Array.isArray(teamEarnData) && teamEarnData.length > 0
+                ? Number(teamEarnData[0]?.total_earnings || 0)
+                : 0;
 
             // Self-healing: Criar perfil se não existir (Correção para falta de Trigger)
             if (!profile && userId) {
@@ -270,6 +277,7 @@ export const AppProvider = ({ children }) => {
                         balance_frozen_usd: wallet ? (wallet.balance_frozen_usd || 0) : 0,
                         deposited: wallet ? (wallet.total_deposited_usd || 0) : prev.wallet.deposited,
                         withdrawn: wallet ? (wallet.total_withdrawn_usd || 0) : prev.wallet.withdrawn,
+                        teamEarningsUsd,
                         totalEarnings: wallet ? (wallet.total_earnings_usd || 0) : prev.wallet.totalEarnings
                  },
                  plans: mappedPlans,
@@ -562,15 +570,12 @@ export const AppProvider = ({ children }) => {
   };
 
   const processPvpDistribution = (betAmount) => {
-    // 10% de cada lado = 20% da aposta total de um jogador (considerando que são 2 jogadores apostando o mesmo valor)
-    // Total Retido = (betAmount * 2) * 0.10  <-- CORREÇÃO: Usuário disse "10% de cada jogador".
-    // Jogador 1: 100 -> 10 taxa.
-    // Jogador 2: 100 -> 10 taxa.
-    // Total Taxa: 20.
+    // 15% de cada lado = 30% da aposta total de um jogador (considerando que são 2 jogadores apostando o mesmo valor)
+    // "O sistema fica com 15% de cada participante"
     
-    const totalFee = betAmount * 0.2; // 10% de cada um dos 2 jogadores = 20% de UMA aposta base
+    const totalFee = betAmount * 0.30; // 15% de cada um dos 2 jogadores = 30% de UMA aposta base
     const prizeDistributionPool = totalFee * 0.5; // 50% para distribuição (Rankings, Torneios, ONG)
-    // Os outros 50% são da Empresa (não precisamos trackear no state explicitamente por enquanto, ou podemos criar um campo 'companyTreasury')
+    // Os outros 50% são da Empresa
 
     const monthlyShare = prizeDistributionPool * 0.30;
     const biweeklyShare = prizeDistributionPool * 0.10;
@@ -597,9 +602,11 @@ export const AppProvider = ({ children }) => {
 
   const addPlan = async (planType, amount) => {
     const isSponsoredAccount = state.user.account_status === 'sponsored';
-    const availableUsd = isSponsoredAccount ? (state.wallet.balance_frozen_usd || 0) : (state.wallet.balance_usd || state.wallet.usd || 0);
+    const frozenBalance = state.wallet.balance_frozen_usd || 0;
+    const realBalance = state.wallet.balance_usd || state.wallet.usd || 0;
+    const totalAvailable = isSponsoredAccount ? (frozenBalance + realBalance) : realBalance;
 
-    if (availableUsd < amount) {
+    if (totalAvailable < amount) {
       addNotification("Saldo insuficiente para contratação.", "danger");
       return false;
     }
@@ -608,56 +615,19 @@ export const AppProvider = ({ children }) => {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) throw new Error("Usuário não autenticado");
 
-        const userId = session.user.id;
-
         const now = new Date();
-        const durationDays = planType === 'premium' ? 365 : 180;
-        const dailyRoiPercent = planType === 'premium' ? 1.3 : 1.0;
-        const totalReturnMultiplier = planType === 'premium' ? 4.75 : 1.8;
-        const endDate = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+        const { data: purchaseData, error: purchaseError } = await supabase.rpc('purchase_mining_plan', {
+            p_plan_type: planType,
+            p_amount: amount
+        });
 
-        // 2. Insere o Plano no Banco de Dados (campos obrigatórios)
-        const { error: planError } = await supabase.from('plans').insert([{
-            user_id: userId,
-            type: planType,
-            amount_invested: amount,
-            daily_roi_percent: dailyRoiPercent,
-            total_return_limit: parseFloat((amount * totalReturnMultiplier).toFixed(2)),
-            end_date: endDate.toISOString(),
-            status: 'active'
-        }]);
+        if (purchaseError) throw purchaseError;
 
-        if (planError) throw planError;
-
-        // 3. Deduz o saldo da carteira (wallet) no banco de dados
-        // Primeiro busca o saldo atual para não ter erro de concorrência
-        const { data: walletData } = await supabase
-            .from('wallets')
-            .select('balance_usd, balance_frozen_usd')
-            .eq('user_id', userId)
-            .single();
-
-        const currentUsd = walletData?.balance_usd || 0;
-        const currentFrozenUsd = walletData?.balance_frozen_usd || 0;
-
-        const walletUpdate = isSponsoredAccount
-            ? { balance_frozen_usd: currentFrozenUsd - amount }
-            : { balance_usd: currentUsd - amount };
-
-        const { error: walletError } = await supabase
-            .from('wallets')
-            .update(walletUpdate)
-            .eq('user_id', userId);
-            
-        if (walletError) throw walletError;
-
-        // 4. Patrocínio: não gera bônus de rede.
-        // (Bônus de rede só deve existir para depósitos reais / após ativação de conta)
-        // Nenhuma ação adicional aqui.
-
-        // 5. Atualiza o Estado Local
+        const amountToDeductReal = Number(purchaseData?.deduct_real || 0);
+        const amountToDeductFrozen = Number(purchaseData?.deduct_frozen || 0);
+        const newPlanId = purchaseData?.plan_id || Date.now();
         const newPlan = {
-          id: Date.now(), // Temporário até recarregar
+          id: newPlanId,
           type: planType,
           amount: parseFloat(amount),
           active: true,
@@ -669,12 +639,11 @@ export const AppProvider = ({ children }) => {
           ...prev,
           wallet: { 
               ...prev.wallet, 
-              usd: isSponsoredAccount ? (prev.wallet.usd || 0) : (prev.wallet.balance_usd ?? prev.wallet.usd) - amount,
-              balance_usd: isSponsoredAccount ? (prev.wallet.balance_usd ?? 0) : (prev.wallet.balance_usd ?? prev.wallet.usd) - amount,
-              balance_frozen_usd: isSponsoredAccount ? (prev.wallet.balance_frozen_usd || 0) - amount : (prev.wallet.balance_frozen_usd || 0)
+              usd: (prev.wallet.usd || 0) - amountToDeductReal,
+              balance_usd: (prev.wallet.balance_usd || 0) - amountToDeductReal,
+              balance_frozen_usd: (prev.wallet.balance_frozen_usd || 0) - amountToDeductFrozen
           },
           plans: [...prev.plans, newPlan],
-          // Se estava inativo e não é patrocinado, fica ativo
           user: {
               ...prev.user,
               account_status: (!isSponsoredAccount && prev.user.account_status === 'inactive') ? 'active' : prev.user.account_status

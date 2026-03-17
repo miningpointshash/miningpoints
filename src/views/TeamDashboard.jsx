@@ -213,7 +213,19 @@ export const TeamDashboard = ({ onBack }) => {
                                                     </div>
                                                     <div className="text-right">
                                                         <div className="text-[10px] font-bold inline-block mb-1">
-                                                            {getStatusLabel(user.account_status)}
+                                                            {getStatusLabel(user.status)}
+                                                        </div>
+                                                        <div className="flex justify-end gap-1 mb-1">
+                                                            {user.is_eligible_plans && (
+                                                                <span className="text-[9px] px-1 rounded border border-green-500/40 text-green-400 bg-green-900/10">
+                                                                    PLANO
+                                                                </span>
+                                                            )}
+                                                            {user.is_eligible_pvp && (
+                                                                <span className="text-[9px] px-1 rounded border border-pink-500/40 text-pink-400 bg-pink-900/10">
+                                                                    PVP
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <div className="text-[10px] text-gray-400">
                                                             Vol: ${user.personal_volume || 0}
