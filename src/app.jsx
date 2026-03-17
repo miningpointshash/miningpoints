@@ -17,6 +17,7 @@ import { ArcadeView } from './views/Arcade';
 import { MenuView } from './views/Menu';
 import { AdminView } from './views/Admin';
 import { AuthView } from './views/Auth'; // Importa Auth
+import { EmailWelcomeView } from './views/EmailWelcome';
 
 // --- ERROR BOUNDARY ---
 class ErrorBoundary extends React.Component {
@@ -72,8 +73,14 @@ const Layout = () => {
   const [isLanguageOpen, setLanguageOpen] = useState(false);
   
   // Landing Page State
-  const [showLanding, setShowLanding] = useState(true);
-  const [authInitialMode, setAuthInitialMode] = useState('login');
+  const [showLanding, setShowLanding] = useState(() => {
+      const params = new URLSearchParams(window.location.search);
+      return !params.get('auth');
+  });
+  const [authInitialMode, setAuthInitialMode] = useState(() => {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('auth') === 'register' ? 'register' : 'login';
+  });
 
   useEffect(() => {
     // Verifica conexão com Supabase ao iniciar
@@ -88,6 +95,23 @@ const Layout = () => {
     };
     check();
   }, []);
+
+  const params = new URLSearchParams(window.location.search);
+  const isWelcome = params.get('welcome') === '1';
+
+  if (isWelcome) {
+      return (
+        <EmailWelcomeView
+          isAuthenticated={state.user.isAuthenticated}
+          onGoLogin={() => {
+            window.location.href = '/?auth=login';
+          }}
+          onGoHome={() => {
+            window.location.href = '/?view=home';
+          }}
+        />
+      );
+  }
 
   // Se não estiver autenticado, mostra Login/Cadastro
   if (!state.user.isAuthenticated) {
