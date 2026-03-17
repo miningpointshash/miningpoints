@@ -18,6 +18,7 @@ import { MenuView } from './views/Menu';
 import { AdminView } from './views/Admin';
 import { AuthView } from './views/Auth'; // Importa Auth
 import { EmailWelcomeView } from './views/EmailWelcome';
+import { getReferralUsername, parseReferralFromLocation, setReferralUsername } from './utils/referral';
 
 // --- ERROR BOUNDARY ---
 class ErrorBoundary extends React.Component {
@@ -73,12 +74,17 @@ const Layout = () => {
   const [isLanguageOpen, setLanguageOpen] = useState(false);
   
   // Landing Page State
+  const initialHasReferral =
+      new URLSearchParams(window.location.search).get('ref') ||
+      (window.location.pathname || '').startsWith('/ref/');
+
   const [showLanding, setShowLanding] = useState(() => {
       const params = new URLSearchParams(window.location.search);
-      return !params.get('auth');
+      return !params.get('auth') && !initialHasReferral;
   });
   const [authInitialMode, setAuthInitialMode] = useState(() => {
       const params = new URLSearchParams(window.location.search);
+      if (initialHasReferral) return 'register';
       return params.get('auth') === 'register' ? 'register' : 'login';
   });
 
@@ -94,6 +100,20 @@ const Layout = () => {
         }
     };
     check();
+  }, []);
+
+  useEffect(() => {
+    const { username, normalizedUrl } = parseReferralFromLocation(window.location);
+    if (username) {
+      setReferralUsername(username);
+      if (normalizedUrl && normalizedUrl !== window.location.href) {
+        history.replaceState(null, '', normalizedUrl);
+      }
+      if (!state.user.isAuthenticated) {
+        setAuthInitialMode('register');
+        setShowLanding(false);
+      }
+    }
   }, []);
 
   const params = new URLSearchParams(window.location.search);
@@ -115,14 +135,35 @@ const Layout = () => {
 
   // Se não estiver autenticado, mostra Login/Cadastro
   if (!state.user.isAuthenticated) {
+      const navigateToAuth = (mode) => {
+        const ref = getReferralUsername();
+        const url = new URL(window.location.href);
+        url.pathname = '/';
+        url.searchParams.set('auth', mode);
+        if (ref) url.searchParams.set('ref', ref);
+        history.replaceState(null, '', url.toString());
+        setAuthInitialMode(mode);
+        setShowLanding(false);
+      };
+
       if (showLanding) {
-        return <LandingView onNavigate={(mode) => { setAuthInitialMode(mode); setShowLanding(false); }} />;
+        return <LandingView onNavigate={navigateToAuth} />;
       }
       
       return (
         <div className={`min-h-screen bg-black font-sans text-gray-200 overflow-x-hidden selection:bg-purple-500 selection:text-white pb-safe`}>
             <div className={`max-w-lg mx-auto min-h-screen ${THEME.bg} shadow-2xl relative border-x border-gray-900`}>
-                <AuthView initialMode={authInitialMode} onBack={() => setShowLanding(true)} />
+                <AuthView
+                  initialMode={authInitialMode}
+                  onBack={() => {
+                    const url = new URL(window.location.href);
+                    url.pathname = '/';
+                    url.searchParams.delete('auth');
+                    url.searchParams.delete('ref');
+                    history.replaceState(null, '', url.toString());
+                    setShowLanding(true);
+                  }}
+                />
             </div>
         </div>
       );

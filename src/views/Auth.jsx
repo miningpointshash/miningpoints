@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { Mail, Lock, User, Eye, EyeOff, Loader, AlertCircle, Users, Globe, ChevronDown, ArrowLeft } from 'lucide-react';
 import { THEME } from '../utils/theme';
 import { AVAILABLE_LANGUAGES } from '../locales';
+import { clearReferralUsername, getReferralUsername } from '../utils/referral';
 
 export const AuthView = ({ initialMode = 'login', onBack }) => {
     const { setState, addNotification, changeLanguage, t, state } = useContext(AppContext);
@@ -28,8 +29,10 @@ export const AuthView = ({ initialMode = 'login', onBack }) => {
     React.useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const ref = params.get('ref');
-        if (ref) {
-            setSponsor(ref);
+        const stored = getReferralUsername();
+        const effectiveRef = ref || stored;
+        if (effectiveRef) {
+            setSponsor(effectiveRef);
             setSponsorLocked(true);
             setMode('register'); // Força modo cadastro se tiver ref
         }
@@ -72,6 +75,7 @@ export const AuthView = ({ initialMode = 'login', onBack }) => {
                     email,
                     password,
                     options: {
+                        emailRedirectTo: `${window.location.origin}/?welcome=1&auth=login`,
                         data: {
                             username: username, // Username obrigatório
                             full_name: fullName, // Nome completo
@@ -92,6 +96,7 @@ export const AuthView = ({ initialMode = 'login', onBack }) => {
                 }
 
                 setRegisterSuccess(true);
+                clearReferralUsername();
             }
             else if (mode === 'forgot') {
                 const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -159,7 +164,7 @@ export const AuthView = ({ initialMode = 'login', onBack }) => {
             <div className="w-full max-w-md z-10">
                 {/* Logo */}
                 <div className="flex justify-center mb-8">
-                    <img src="/assets/logo/logo_01.png" alt="Mining Points" className="h-8 w-auto object-contain drop-shadow-[0_0_15px_rgba(147,51,234,0.5)]" />
+                    <img src="/assets/logo/logo_01.png" alt="Mining Points" className="h-6 w-auto object-contain drop-shadow-[0_0_15px_rgba(147,51,234,0.5)]" />
                 </div>
 
                 {/* Card */}
