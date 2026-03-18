@@ -3,6 +3,7 @@ import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Cpu, Zap, Battery, Shield, T
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { SoundManager } from '../../utils/soundManager';
+import { supabase } from '../../lib/supabase';
 
 const GRID_SIZE = 6;
 const GAME_DURATION = 60; // segundos
@@ -15,7 +16,12 @@ const ITEMS = [
     { id: 'shield', icon: Shield, color: 'text-purple-400', points: 15 }
 ];
 
-export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, botChar = 'mp_p2', isMuted = false, difficulty = 'medium' }) => {
+const ITEM_BY_ID = ITEMS.reduce((acc, it) => {
+    acc[it.id] = it;
+    return acc;
+}, {});
+
+export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, botChar = 'mp_p2', botName, isMuted = false, difficulty = 'medium', roomId, selfId, creatorId, challengerId, creatorAvatar, challengerAvatar, creatorName, challengerName }) => {
     const [gameState, setGameState] = useState('playing'); 
     const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
     const [score, setScore] = useState({ player: 0, bot: 0 });
@@ -29,6 +35,9 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
     const playerPosRef = useRef({ x: 0, y: 0 });
     const botPosRef = useRef({ x: GRID_SIZE - 1, y: GRID_SIZE - 1 });
     const gridRef = useRef([]);
+    const isMultiplayer = Boolean(roomId && selfId && creatorId && challengerId);
+    const reportedRef = useRef(false);
+    const remoteStateRef = useRef(null);
 
     // Configuração de IA baseada na dificuldade
     const aiConfig = useRef({
@@ -39,6 +48,7 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
     });
 
     useEffect(() => {
+        if (isMultiplayer) return;
         switch(difficulty) {
             case 'extreme':
                 // Nível Deus: Muito rápido, busca total, zero erro, prioriza roubar itens
@@ -66,6 +76,63 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
         setTimeout(() => setHitTarget(null), 300);
     };
 
+    const applyRemoteSnapshot = (state) => {
+        if (!state || typeof state !== 'object') return;
+        remoteStateRef.current = state;
+
+        const positions = state.positions || {};
+        const scores = state.scores || {};
+        const flips = state.flips || {};
+
+        const challengerPos = positions.challenger || {};
+        const creatorPos = positions.creator || {};
+
+        const cPos = { x: Number(challengerPos.x || 0), y: Number(challengerPos.y || 0) };
+        const rPos = { x: Number(creatorPos.x || (GRID_SIZE - 1)), y: Number(creatorPos.y || (GRID_SIZE - 1)) };
+
+        playerPosRef.current = cPos;
+        botPosRef.current = rPos;
+        setPlayerPos(cPos);
+        setBotPos(rPos);
+
+        setPlayerFlip(Boolean(flips.challenger));
+        setBotFlip(Boolean(flips.creator));
+
+        setScore({
+            player: Number(scores.challenger || 0),
+            bot: Number(scores.creator || 0)
+        });
+
+        const rawGrid = state.grid;
+        const renderGrid = Array.isArray(rawGrid)
+            ? rawGrid.map((row) => Array.isArray(row)
+                ? row.map((cell) => {
+                    if (!cell || typeof cell !== 'object') return null;
+                    const def = ITEM_BY_ID[cell.id];
+                    if (!def) return null;
+                    return { ...def, uid: cell.uid || `${cell.id}-${Math.random()}` };
+                })
+                : Array(GRID_SIZE).fill(null))
+            : Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(null));
+
+        setGrid(renderGrid);
+        gridRef.current = renderGrid;
+
+        if (state.status === 'finished') {
+            gameStateRef.current = 'finished';
+            setGameState('finished');
+        } else {
+            gameStateRef.current = 'playing';
+            setGameState('playing');
+        }
+
+        const ev = state.last_event || null;
+        if (ev?.type === 'hit' && ev?.by) {
+            const target = ev.by === 'creator' ? 'player' : 'bot';
+            triggerHitEffect(target);
+        }
+    };
+
     const checkCollection = (x, y, who) => {
         const currentGrid = gridRef.current;
         if (currentGrid[y] && currentGrid[y][x]) {
@@ -81,6 +148,7 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
 
     // Inicializa Grid e Estado
     useEffect(() => {
+        if (isMultiplayer) return;
         const initialGrid = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(null));
         // Force spawn 8 items initially to ensure grid is not empty
         for(let i=0; i<8; i++) {
@@ -152,6 +220,88 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
             }, 1500);
         }
     }, [gameState]);
+
+    useEffect(() => {
+        if (!isMultiplayer) return;
+        reportedRef.current = false;
+        gameStateRef.current = 'playing';
+        setGameState('playing');
+        setGrid([]);
+        setScore({ player: 0, bot: 0 });
+        setHitTarget(null);
+
+        let alive = true;
+
+        const fetchState = async () => {
+            const { data: row } = await supabase
+                .from('pvp_room_game_states')
+                .select('state')
+                .eq('room_id', roomId)
+                .maybeSingle();
+            if (!alive) return;
+            if (row?.state) applyRemoteSnapshot(row.state);
+        };
+
+        const init = async () => {
+            try {
+                const { data } = await supabase.rpc('init_hash_harvest_room', { p_room_id: roomId });
+                if (!alive) return;
+                if (data?.state) applyRemoteSnapshot(data.state);
+                await fetchState();
+            } catch {}
+        };
+
+        init();
+
+        const channel = supabase
+            .channel(`pvp_room_hash_${roomId}`)
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'pvp_room_game_states', filter: `room_id=eq.${roomId}` },
+                (payload) => {
+                    const next = payload?.new?.state;
+                    if (next) applyRemoteSnapshot(next);
+                }
+            )
+            .subscribe();
+
+        const poll = setInterval(fetchState, 800);
+
+        const timer = setInterval(() => {
+            const st = remoteStateRef.current;
+            if (!st) return;
+            const start = st.start_at ? new Date(st.start_at).getTime() : null;
+            const dur = Number(st.duration || GAME_DURATION);
+            if (!start) return;
+            const elapsed = Math.floor((Date.now() - start) / 1000);
+            const left = Math.max(0, dur - elapsed);
+            setTimeLeft(left);
+            if (left === 0 && gameStateRef.current === 'playing') {
+                gameStateRef.current = 'finished';
+                setGameState('finished');
+            }
+        }, 250);
+
+        return () => {
+            alive = false;
+            try { clearInterval(poll); } catch {}
+            try { clearInterval(timer); } catch {}
+            try { supabase.removeChannel(channel); } catch {}
+        };
+    }, [isMultiplayer, roomId]);
+
+    useEffect(() => {
+        if (!isMultiplayer) return;
+        if (gameState !== 'finished') return;
+        if (reportedRef.current) return;
+        const st = remoteStateRef.current;
+        if (!st?.scores) return;
+        reportedRef.current = true;
+
+        const myScore = selfId === creatorId ? Number(st.scores.creator || 0) : Number(st.scores.challenger || 0);
+        const otherScore = selfId === creatorId ? Number(st.scores.challenger || 0) : Number(st.scores.creator || 0);
+        onGameOver({ player: myScore, bot: otherScore });
+    }, [isMultiplayer, gameState, selfId, creatorId, challengerId, onGameOver]);
 
     const spawnItem = (currentGrid) => {
         if (!currentGrid) return;
@@ -309,6 +459,18 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
     };
 
     const handlePlayerMove = (dx, dy) => {
+        if (isMultiplayer) {
+            if (gameStateRef.current !== 'playing') return;
+            if (timeLeft <= 0) return;
+            supabase
+                .rpc('move_hash_harvest_room', { p_room_id: roomId, p_dx: dx, p_dy: dy })
+                .then(({ data }) => {
+                    const next = data?.state;
+                    if (next) applyRemoteSnapshot(next);
+                });
+            return;
+        }
+
         if (gameStateRef.current !== 'playing') return;
         
         const currentPos = playerPosRef.current;
@@ -396,14 +558,23 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
+    const leftName = isMultiplayer ? (challengerName || 'Desafiante') : 'VOCÊ';
+    const rightName = isMultiplayer ? (creatorName || 'Criador') : String(botName || 'RIVAL');
+    const leftAvatar = isMultiplayer ? (challengerAvatar || playerChar) : playerChar;
+    const rightAvatar = isMultiplayer ? (creatorAvatar || botChar) : botChar;
+    const leftScore = isMultiplayer ? score.player : score.player;
+    const rightScore = isMultiplayer ? score.bot : score.bot;
+    const leftIsYou = isMultiplayer ? selfId === challengerId : true;
+    const rightIsYou = isMultiplayer ? selfId === creatorId : false;
+
     return (
         <div className="flex flex-col items-center justify-between h-full w-full max-w-md mx-auto relative">
             
             {/* HUD */}
             <div className="w-full flex justify-between items-center mb-4 px-2">
                 <Card className="p-2 w-24 text-center border-green-500 bg-green-900/20">
-                    <p className="text-[10px] text-green-400 font-bold uppercase">VOCÊ</p>
-                    <p className="text-xl font-black text-white">{score.player}</p>
+                    <p className="text-[10px] text-green-400 font-bold uppercase">{leftIsYou ? 'VOCÊ' : leftName}</p>
+                    <p className="text-xl font-black text-white">{leftScore}</p>
                 </Card>
 
                 <div className="flex flex-col items-center">
@@ -415,8 +586,8 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
                 </div>
 
                 <Card className="p-2 w-24 text-center border-red-500 bg-red-900/20">
-                    <p className="text-[10px] text-red-400 font-bold uppercase">RIVAL</p>
-                    <p className="text-xl font-black text-white">{score.bot}</p>
+                    <p className="text-[10px] text-red-400 font-bold uppercase">{rightIsYou ? 'VOCÊ' : rightName}</p>
+                    <p className="text-xl font-black text-white">{rightScore}</p>
                 </Card>
             </div>
 
@@ -451,7 +622,7 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
                     style={getPosStyle(playerPos)}
                 >
                     <img 
-                        src={`/assets/persona/${playerChar}.svg`} 
+                        src={`/assets/persona/${leftAvatar}.svg`} 
                         alt="P1" 
                         className={`w-4/5 h-4/5 drop-shadow-[0_0_8px_rgba(34,197,94,0.8)] transition-transform duration-200 ${playerFlip ? '-scale-x-100' : 'scale-x-100'} ${hitTarget === 'player' ? 'brightness-200 saturate-200 animate-pulse' : ''}`} 
                     />
@@ -466,9 +637,9 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
                     style={getPosStyle(botPos)}
                 >
                     <img 
-                        src={`/assets/persona/${botChar}.svg`} 
+                        src={`/assets/persona/${rightAvatar}.svg`} 
                         alt="Bot" 
-                        className={`w-4/5 h-4/5 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)] grayscale transition-transform duration-200 ${botFlip ? '-scale-x-100' : 'scale-x-100'} ${hitTarget === 'bot' ? 'brightness-200 saturate-200 animate-pulse' : ''}`} 
+                        className={`w-4/5 h-4/5 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)] ${isMultiplayer ? '' : 'grayscale'} transition-transform duration-200 ${botFlip ? '-scale-x-100' : 'scale-x-100'} ${hitTarget === 'bot' ? 'brightness-200 saturate-200 animate-pulse' : ''}`} 
                     />
                     {hitTarget === 'bot' && (
                         <span className="absolute -top-6 text-red-500 font-black text-2xl animate-bounce drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] z-50">SMASH!</span>

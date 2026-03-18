@@ -379,6 +379,12 @@ export default {
     since: "加入于",
     active: "活跃",
     inactive: "不活跃",
-    vol: "业绩"
+    vol: "业绩",
+    pvpOwnVolume: "PVP 个人量",
+    pvpBets: "下注量",
+    pvpFeePaid: "已付手续费",
+    pvpProfit: "结果",
+    pvpWdl: "胜-平-负",
+    points: "积分"
   }
 };

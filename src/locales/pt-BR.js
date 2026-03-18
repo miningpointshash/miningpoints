@@ -381,6 +381,12 @@ export default {
     since: "Desde",
     active: "ATIVO",
     inactive: "INATIVO",
-    vol: "Vol"
+    vol: "Vol",
+    pvpOwnVolume: "Volume PvP (próprio)",
+    pvpBets: "Apostas",
+    pvpFeePaid: "Taxa paga",
+    pvpProfit: "Resultado",
+    pvpWdl: "V-E-D",
+    points: "pontos"
   }
 };

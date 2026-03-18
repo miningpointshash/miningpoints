@@ -3,19 +3,26 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { SoundManager } from '../../utils/soundManager';
 import { Trophy, AlertTriangle, User, HelpCircle } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
-export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, isMuted }) => {
-    const [doors, setDoors] = useState(Array(12).fill({ status: 'closed', owner: null })); // status: closed, open. owner: player, bot, null
+export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, botName, isMuted, roomId, selfId, creatorId, challengerId, creatorAvatar, challengerAvatar, creatorName, challengerName }) => {
+    const [doors, setDoors] = useState(Array.from({ length: 12 }, () => ({ status: 'closed', owner: null })));
     const [prizeDoor, setPrizeDoor] = useState(null);
-    const [turn, setTurn] = useState('player'); // player, bot
-    const [gameState, setGameState] = useState('start'); // start, playing, animation, result
+    const [turn, setTurn] = useState('player');
+    const [gameState, setGameState] = useState('start');
     const [message, setMessage] = useState('Sua vez! Escolha uma porta.');
-    const [winner, setWinner] = useState(null); // 'player' or 'bot'
+    const [winner, setWinner] = useState(null);
+    const [roomState, setRoomState] = useState(null);
+    const [roomStateReady, setRoomStateReady] = useState(false);
+    const reportedRef = useRef(false);
 
     const videoRef = useRef(null);
+    const isMultiplayer = Boolean(roomId && selfId && creatorId && challengerId);
+    const selfRole = isMultiplayer ? (selfId === creatorId ? 'creator' : 'challenger') : null;
 
     // Init game
     useEffect(() => {
+        if (isMultiplayer) return;
         // Randomly select prize door (0-11)
         const prize = Math.floor(Math.random() * 12);
         setPrizeDoor(prize);
@@ -23,13 +30,116 @@ export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, is
         
         // Play start sound
         if (!isMuted) SoundManager.playSfx('click');
-    }, []);
+    }, [isMuted, isMultiplayer]);
+
+    useEffect(() => {
+        if (!isMultiplayer) return;
+        reportedRef.current = false;
+        let alive = true;
+
+        const ensureState = async () => {
+            setRoomStateReady(false);
+            try {
+                const { data, error } = await supabase.rpc('init_twelve_doors_room', { p_room_id: roomId });
+                if (!alive) return;
+                if (error) return;
+                if (data?.state) {
+                    setRoomState(data.state);
+                    setRoomStateReady(true);
+                    return;
+                }
+            } catch {}
+        };
+
+        ensureState();
+
+        const channel = supabase
+            .channel(`pvp_room_state_${roomId}`)
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'pvp_room_game_states', filter: `room_id=eq.${roomId}` },
+                (payload) => {
+                    const next = payload?.new?.state;
+                    if (!next) return;
+                    setRoomState(next);
+                    setRoomStateReady(true);
+                }
+            )
+            .subscribe();
+
+        const poll = setInterval(async () => {
+            if (!alive) return;
+            const { data: row } = await supabase
+                .from('pvp_room_game_states')
+                .select('state')
+                .eq('room_id', roomId)
+                .maybeSingle();
+            if (row?.state) {
+                setRoomState(row.state);
+                setRoomStateReady(true);
+            }
+        }, 900);
+
+        return () => {
+            alive = false;
+            try { clearInterval(poll); } catch {}
+            try { supabase.removeChannel(channel); } catch {}
+        };
+    }, [isMultiplayer, roomId, selfId, creatorId]);
+
+    useEffect(() => {
+        if (!isMultiplayer) return;
+        if (!roomStateReady || !roomState) return;
+
+        const rsDoors = Array.isArray(roomState.doors) ? roomState.doors : [];
+        setDoors(rsDoors.length === 12 ? rsDoors : Array.from({ length: 12 }, () => ({ status: 'closed', owner: null })));
+        setPrizeDoor(Number.isInteger(roomState.prize_door) ? roomState.prize_door : null);
+
+        const turnUserId = roomState.turn_user_id;
+        const isMyTurn = turnUserId === selfId;
+        setTurn(isMyTurn ? 'player' : 'bot');
+
+        if (roomState.status === 'finished') {
+            const w = roomState.winner_role === selfRole ? 'player' : 'bot';
+            setWinner(w);
+            setGameState('animation');
+            setMessage(w === 'player' ? 'VOCÊ ENCONTROU!' : 'OPONENTE ENCONTROU!');
+            return;
+        }
+
+        setGameState('playing');
+        if (isMyTurn) {
+            if (roomState?.last_event?.type === 'miss' && roomState?.last_event?.by && roomState.last_event.by !== selfRole) {
+                setMessage('Oponente errou! Sua vez.');
+            } else {
+                setMessage('Sua vez! Escolha uma porta.');
+            }
+        } else {
+            if (roomState?.last_event?.type === 'miss' && roomState?.last_event?.by === selfRole) {
+                setMessage('Nada aqui... Vez do oponente.');
+            } else {
+                setMessage('Aguarde...');
+            }
+        }
+    }, [isMultiplayer, roomStateReady, roomState, selfId, selfRole]);
+
+    useEffect(() => {
+        if (!isMultiplayer) return;
+        if (!roomStateReady || !roomState) return;
+        if (roomState.status !== 'finished') return;
+        if (reportedRef.current) return;
+
+        reportedRef.current = true;
+        const selfScore = roomState.winner_role === selfRole ? 1 : 0;
+        onGameOver({ player: selfScore, bot: selfScore ? 0 : 1 });
+    }, [isMultiplayer, roomStateReady, roomState, selfRole, onGameOver]);
 
     // Bot Turn Logic
     useEffect(() => {
+        if (isMultiplayer) return;
         if (turn === 'bot' && gameState === 'playing') {
             const botThinkingTime = 1000 + Math.random() * 1000; // 1-2s delay
-            setMessage(`${botChar || 'Oponente'} está escolhendo...`);
+            setMessage(`${botName || 'Oponente'} está escolhendo...`);
             
             const timer = setTimeout(() => {
                 handleBotMove();
@@ -57,6 +167,22 @@ export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, is
     };
 
     const handlePlayerClick = (index) => {
+        if (isMultiplayer) {
+            if (!roomStateReady || !roomState) return;
+            if (roomState.status !== 'playing') return;
+            if (roomState.turn_user_id !== selfId) return;
+            if (!isMuted) SoundManager.playSfx('click');
+            supabase
+                .rpc('play_twelve_doors_move', { p_room_id: roomId, p_door_index: index })
+                .then(({ data }) => {
+                    if (data?.state) {
+                        setRoomState(data.state);
+                        setRoomStateReady(true);
+                    }
+                });
+            return;
+        }
+
         if (gameState !== 'playing' || turn !== 'player') return;
         if (doors[index].status !== 'closed') return;
 
@@ -112,8 +238,19 @@ export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, is
 
     // Video end handler
     const handleVideoEnd = () => {
+        if (isMultiplayer) return;
         finishGame('player');
     };
+
+    const leftName = isMultiplayer ? (challengerName || 'Desafiante') : 'Você';
+    const rightName = isMultiplayer ? (creatorName || 'Criador') : (botName || 'Oponente');
+    const leftAvatar = isMultiplayer ? (challengerAvatar || playerChar) : playerChar;
+    const rightAvatar = isMultiplayer ? (creatorAvatar || botChar) : (botChar || 'mp_p6');
+    const turnUserId = isMultiplayer ? roomState?.turn_user_id : null;
+    const leftTurn = isMultiplayer ? turnUserId === challengerId : turn === 'player';
+    const rightTurn = isMultiplayer ? turnUserId === creatorId : turn === 'bot';
+    const leftIsYou = isMultiplayer ? selfId === challengerId : true;
+    const rightIsYou = isMultiplayer ? selfId === creatorId : false;
 
     return (
         <div className="w-full max-w-4xl mx-auto flex flex-col items-center justify-center min-h-[60vh]">
@@ -121,13 +258,13 @@ export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, is
             {/* Header / HUD */}
             <div className="w-full flex justify-between items-center mb-6 bg-gray-900/80 p-4 rounded-xl border border-gray-700 backdrop-blur">
                 <div className="flex items-center gap-3">
-                    <div className={`p-1 rounded-lg border-2 ${turn === 'player' ? 'border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'border-gray-700'}`}>
-                        <img src={`/assets/persona/${playerChar}.svg`} alt="You" className="w-12 h-12" />
+                    <div className={`p-1 rounded-lg border-2 ${leftTurn ? 'border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'border-gray-700'}`}>
+                        <img src={`/assets/persona/${leftAvatar}.svg`} alt="Left" className="w-12 h-12" />
                     </div>
                     <div>
-                        <p className="text-xs text-gray-400">Você</p>
-                        <p className={`font-bold ${turn === 'player' ? 'text-green-400' : 'text-gray-500'}`}>
-                            {turn === 'player' ? 'SUA VEZ' : 'Aguarde...'}
+                        <p className="text-xs text-gray-400">{leftIsYou ? 'Você' : leftName}</p>
+                        <p className={`font-bold ${leftTurn ? 'text-green-400' : 'text-gray-500'}`}>
+                            {leftTurn ? 'SUA VEZ' : 'Aguarde...'}
                         </p>
                     </div>
                 </div>
@@ -141,13 +278,13 @@ export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, is
 
                 <div className="flex items-center gap-3 text-right">
                     <div>
-                        <p className="text-xs text-gray-400">{botChar || 'Oponente'}</p>
-                        <p className={`font-bold ${turn === 'bot' ? 'text-red-400' : 'text-gray-500'}`}>
-                            {turn === 'bot' ? 'JOGANDO' : 'Aguarde...'}
+                        <p className="text-xs text-gray-400">{rightIsYou ? 'Você' : rightName}</p>
+                        <p className={`font-bold ${rightTurn ? 'text-red-400' : 'text-gray-500'}`}>
+                            {rightTurn ? 'JOGANDO' : 'Aguarde...'}
                         </p>
                     </div>
-                    <div className={`p-1 rounded-lg border-2 ${turn === 'bot' ? 'border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'border-gray-700'}`}>
-                        <img src={`/assets/persona/${botChar || 'mp_p6'}.svg`} alt="Bot" className="w-12 h-12" />
+                    <div className={`p-1 rounded-lg border-2 ${rightTurn ? 'border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'border-gray-700'}`}>
+                        <img src={`/assets/persona/${rightAvatar}.svg`} alt="Right" className="w-12 h-12" />
                     </div>
                 </div>
             </div>
@@ -164,14 +301,14 @@ export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, is
                         <button
                             key={index}
                             onClick={() => handlePlayerClick(index)}
-                            disabled={door.status === 'open' || turn !== 'player' || gameState !== 'playing'}
+                            disabled={door.status === 'open' || turn !== 'player' || gameState !== 'playing' || (isMultiplayer && !roomStateReady)}
                             className={`
                                 relative aspect-[3/4] rounded-t-full border-b-4 transition-all duration-300 transform
                                 ${door.status === 'open' 
                                     ? 'bg-gray-800 border-gray-700' 
                                     : 'bg-gradient-to-b from-red-700 to-red-900 border-red-950 hover:brightness-110 active:scale-95 shadow-lg'
                                 }
-                                ${turn === 'player' && door.status === 'closed' ? 'cursor-pointer hover:-translate-y-1' : 'cursor-default'}
+                                ${turn === 'player' && door.status === 'closed' && (!isMultiplayer || roomStateReady) ? 'cursor-pointer hover:-translate-y-1' : 'cursor-default'}
                             `}
                         >
                             {door.status === 'closed' && (
@@ -190,7 +327,7 @@ export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, is
                                         </div>
                                     ) : (
                                         <div className="text-gray-600">
-                                            {door.owner === 'player' ? <User size={24} /> : <HelpCircle size={24} />}
+                                            {door.owner === 'player' || door.owner === selfRole ? <User size={24} /> : <HelpCircle size={24} />}
                                             <p className="text-[10px] mt-1">Vazio</p>
                                         </div>
                                     )}

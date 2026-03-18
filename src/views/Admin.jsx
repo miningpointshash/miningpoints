@@ -256,6 +256,7 @@ const FinancialHistoryList = ({ userId }) => {
 const PvpVolumeViewer = ({ userId, username, onClose }) => {
     const [loading, setLoading] = useState(true);
     const [rows, setRows] = useState([]);
+    const [personalStats, setPersonalStats] = useState(null);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -267,9 +268,16 @@ const PvpVolumeViewer = ({ userId, username, onClose }) => {
                 });
                 if (error) throw error;
                 setRows(Array.isArray(data) ? data : []);
+
+                const { data: personal, error: personalError } = await supabase.rpc('get_pvp_personal_volume_stats', {
+                    p_target_user_id: userId
+                });
+                if (!personalError && personal?.ok) setPersonalStats(personal);
+                else setPersonalStats(null);
             } catch (e) {
                 console.error('Erro ao buscar volume PvP:', e);
                 setRows([]);
+                setPersonalStats(null);
             } finally {
                 setLoading(false);
             }
@@ -297,6 +305,34 @@ const PvpVolumeViewer = ({ userId, username, onClose }) => {
                         <div className="text-center py-8 text-gray-500">Carregando...</div>
                     ) : (
                         <>
+                            {personalStats?.ok && (
+                                <div className="mb-4 bg-black/40 border border-gray-800 rounded-lg p-3">
+                                    <div className="text-xs font-bold text-white mb-2">Volume PvP (próprio)</div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="bg-gray-900/40 border border-gray-800 rounded p-2">
+                                            <div className="text-[10px] text-gray-500 uppercase">Apostas</div>
+                                            <div className="text-xs font-mono font-bold text-pink-400">{Number(personalStats.bets_mph || 0).toFixed(2)} MPH</div>
+                                            <div className="text-[10px] text-gray-500">{Number(personalStats.bets_points || 0).toFixed(2)} pts</div>
+                                        </div>
+                                        <div className="bg-gray-900/40 border border-gray-800 rounded p-2">
+                                            <div className="text-[10px] text-gray-500 uppercase">Taxa paga</div>
+                                            <div className="text-xs font-mono font-bold text-yellow-300">{Number(personalStats.fee_paid_mph || 0).toFixed(2)} MPH</div>
+                                            <div className="text-[10px] text-gray-500">{Number(personalStats.fee_paid_points || 0).toFixed(2)} pts</div>
+                                        </div>
+                                        <div className="bg-gray-900/40 border border-gray-800 rounded p-2 col-span-2">
+                                            <div className="text-[10px] text-gray-500 uppercase">Resultado</div>
+                                            <div className={`text-xs font-mono font-bold ${Number(personalStats.profit_mph || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                {Number(personalStats.profit_mph || 0) >= 0 ? '+' : ''}{Number(personalStats.profit_mph || 0).toFixed(2)} MPH
+                                            </div>
+                                            <div className="text-[10px] text-gray-500">
+                                                {Number(personalStats.profit_points || 0) >= 0 ? '+' : ''}{Number(personalStats.profit_points || 0).toFixed(2)} pts
+                                                {' • '}
+                                                W-D-L {Number(personalStats.wins || 0)}-{Number(personalStats.draws || 0)}-{Number(personalStats.losses || 0)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <div className="space-y-2">
                                 {[1, 2, 3, 4, 5, 6, 7].map((lvl) => {
                                     const row = (rows || []).find((r) => Number(r.level) === lvl);
@@ -357,6 +393,7 @@ export const AdminView = ({ navigate }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editUser, setEditUser] = useState(null); // Usuário sendo editado
     const [botRecharge, setBotRecharge] = useState(null); // Bot sendo recarregado
+    const [expandedBotId, setExpandedBotId] = useState(null);
     const [viewFinancials, setViewFinancials] = useState(null); // Visualizar detalhes financeiros
     const [viewNetwork, setViewNetwork] = useState(null); // Visualizar rede do usuário
     const [viewPvpVolume, setViewPvpVolume] = useState(null);
@@ -1457,6 +1494,15 @@ export const AdminView = ({ navigate }) => {
                         <div>
                             <p className="font-bold text-sm text-white">{bot.name}</p>
                             <p className="text-xs font-mono text-purple-400">{bot.mph.toLocaleString()} MPH</p>
+                            {expandedBotId === bot.id && (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                    {(Array.isArray(bot.nicknames) && bot.nicknames.length > 0 ? bot.nicknames : [bot.name]).map((n) => (
+                                        <span key={n} className="text-[10px] px-2 py-0.5 rounded-full border border-pink-500/40 text-pink-300 bg-pink-900/10">
+                                            {n}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                     <div className="flex flex-col gap-2">
@@ -1474,6 +1520,13 @@ export const AdminView = ({ navigate }) => {
                             onClick={() => setBotRecharge(bot)}
                         >
                             <Edit2 size={12} /> Saldo
+                        </Button>
+                        <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => setExpandedBotId(prev => (prev === bot.id ? null : bot.id))}
+                        >
+                            {expandedBotId === bot.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />} Nicknames
                         </Button>
                     </div>
                 </Card>

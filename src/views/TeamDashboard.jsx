@@ -24,6 +24,7 @@ export const TeamDashboard = ({ onBack }) => {
     const [pvpVolumeTarget, setPvpVolumeTarget] = useState(null);
     const [pvpVolumeRows, setPvpVolumeRows] = useState([]);
     const [pvpVolumeLoading, setPvpVolumeLoading] = useState(false);
+    const [pvpPersonalStats, setPvpPersonalStats] = useState(null);
 
     useEffect(() => {
         fetchTeamData();
@@ -40,9 +41,16 @@ export const TeamDashboard = ({ onBack }) => {
                 });
                 if (error) throw error;
                 setPvpVolumeRows(Array.isArray(data) ? data : []);
+
+                const { data: personal, error: personalError } = await supabase.rpc('get_pvp_personal_volume_stats', {
+                    p_target_user_id: pvpVolumeTarget.user_id
+                });
+                if (!personalError && personal?.ok) setPvpPersonalStats(personal);
+                else setPvpPersonalStats(null);
             } catch (e) {
                 console.error('Erro ao buscar volume PVP:', e);
                 setPvpVolumeRows([]);
+                setPvpPersonalStats(null);
             } finally {
                 setPvpVolumeLoading(false);
             }
@@ -143,7 +151,7 @@ export const TeamDashboard = ({ onBack }) => {
                                 <p className="text-xs text-gray-400">{pvpVolumeTarget.username}</p>
                             </div>
                             <button
-                                onClick={() => { setPvpVolumeTarget(null); setPvpVolumeRows([]); }}
+                                onClick={() => { setPvpVolumeTarget(null); setPvpVolumeRows([]); setPvpPersonalStats(null); }}
                                 className="text-gray-400 hover:text-white transition"
                             >
                                 <X size={18} />
@@ -154,6 +162,34 @@ export const TeamDashboard = ({ onBack }) => {
                                 <div className="text-center text-gray-400 text-sm py-6">Carregando...</div>
                             ) : (
                                 <>
+                                    {pvpPersonalStats?.ok && (
+                                        <div className="mb-4 bg-black/40 border border-gray-800 rounded-lg p-3">
+                                            <div className="text-xs font-bold text-white mb-2">{t('team.pvpOwnVolume')}</div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div className="bg-gray-900/40 border border-gray-800 rounded p-2">
+                                                    <div className="text-[10px] text-gray-500 uppercase">{t('team.pvpBets')}</div>
+                                                    <div className="text-xs font-mono font-bold text-pink-400">{Number(pvpPersonalStats.bets_mph || 0).toFixed(2)} MPH</div>
+                                                    <div className="text-[10px] text-gray-500">{Number(pvpPersonalStats.bets_points || 0).toFixed(2)} {t('team.points')}</div>
+                                                </div>
+                                                <div className="bg-gray-900/40 border border-gray-800 rounded p-2">
+                                                    <div className="text-[10px] text-gray-500 uppercase">{t('team.pvpFeePaid')}</div>
+                                                    <div className="text-xs font-mono font-bold text-yellow-300">{Number(pvpPersonalStats.fee_paid_mph || 0).toFixed(2)} MPH</div>
+                                                    <div className="text-[10px] text-gray-500">{Number(pvpPersonalStats.fee_paid_points || 0).toFixed(2)} {t('team.points')}</div>
+                                                </div>
+                                                <div className="bg-gray-900/40 border border-gray-800 rounded p-2 col-span-2">
+                                                    <div className="text-[10px] text-gray-500 uppercase">{t('team.pvpProfit')}</div>
+                                                    <div className={`text-xs font-mono font-bold ${Number(pvpPersonalStats.profit_mph || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                        {Number(pvpPersonalStats.profit_mph || 0) >= 0 ? '+' : ''}{Number(pvpPersonalStats.profit_mph || 0).toFixed(2)} MPH
+                                                    </div>
+                                                    <div className="text-[10px] text-gray-500">
+                                                        {Number(pvpPersonalStats.profit_points || 0) >= 0 ? '+' : ''}{Number(pvpPersonalStats.profit_points || 0).toFixed(2)} {t('team.points')}
+                                                        {' • '}
+                                                        {t('team.pvpWdl')} {Number(pvpPersonalStats.wins || 0)}-{Number(pvpPersonalStats.draws || 0)}-{Number(pvpPersonalStats.losses || 0)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                     <div className="space-y-2">
                                         {[1, 2, 3, 4, 5, 6, 7].map((lvl) => {
                                             const row = (pvpVolumeRows || []).find((r) => Number(r.level) === lvl);

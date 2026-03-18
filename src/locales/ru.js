@@ -378,6 +378,12 @@ export default {
     since: "С",
     active: "АКТИВЕН",
     inactive: "НЕАКТИВЕН",
-    vol: "Объём"
+    vol: "Объём",
+    pvpOwnVolume: "PVP объём (личный)",
+    pvpBets: "Ставки",
+    pvpFeePaid: "Комиссия",
+    pvpProfit: "Результат",
+    pvpWdl: "В-Н-П",
+    points: "очки"
   }
 };

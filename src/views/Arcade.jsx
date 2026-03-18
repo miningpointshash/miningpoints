@@ -38,6 +38,21 @@ export const ArcadeView = () => {
         return `mining_points_pvp_timeout_${uid}`;
     };
 
+    const getActivePvpRoomKey = () => {
+        const uid = state?.user?.id || 'anon';
+        return `mining_points_active_pvp_room_${uid}`;
+    };
+
+    const saveActivePvpRoomId = (roomId) => {
+        const clean = extractUuid(roomId);
+        if (!clean) return;
+        try { localStorage.setItem(getActivePvpRoomKey(), clean); } catch {}
+    };
+
+    const clearActivePvpRoomId = () => {
+        try { localStorage.removeItem(getActivePvpRoomKey()); } catch {}
+    };
+
     const readPvpTimeoutMeta = () => {
         try {
             const raw = localStorage.getItem(getPvpTimeoutKey());
@@ -61,6 +76,28 @@ export const ArcadeView = () => {
 
     const clearPvpTimeoutMeta = () => {
         try { localStorage.removeItem(getPvpTimeoutKey()); } catch {}
+    };
+
+    const pickRandomBotOpponent = () => {
+        const activeBots = (state.bots || []).filter(b => b.active);
+        if (activeBots.length === 0) {
+            return { opponentAvatar: 'mp_p6', opponentName: 'Oponente', botId: null };
+        }
+        const bot = activeBots[Math.floor(Math.random() * activeBots.length)];
+        const nicknames = Array.isArray(bot.nicknames) && bot.nicknames.length > 0 ? bot.nicknames : [bot.name];
+        const opponentName = nicknames[Math.floor(Math.random() * nicknames.length)] || bot.name || 'Oponente';
+        const opponentAvatar = bot.avatar || 'mp_p6';
+        return { opponentAvatar, opponentName, botId: bot.id };
+    };
+
+    const ensureOpponentAssigned = () => {
+        const picked = pickRandomBotOpponent();
+        setPvpConfig(prev => ({
+            ...prev,
+            opponentAvatar: prev.opponentAvatar || picked.opponentAvatar,
+            opponentName: prev.opponentName || picked.opponentName,
+            botId: prev.botId || picked.botId
+        }));
     };
     
     // Verificação de segurança do estado
@@ -106,6 +143,24 @@ export const ArcadeView = () => {
         } else if (outcome === 'loss') {
             SoundManager.playSfx('defeat');
         }
+    };
+
+    const getEdgeErrorMessage = (err, fallback) => {
+        const body = err?.context?.body;
+        if (body) {
+            if (typeof body === 'string') {
+                try {
+                    const parsed = JSON.parse(body);
+                    return parsed?.error || parsed?.message || body;
+                } catch {
+                    return body;
+                }
+            }
+            if (typeof body === 'object') {
+                return body?.error || body?.message || fallback;
+            }
+        }
+        return err?.message || fallback;
     };
 
     // Simulação simplificada de games para o MVP (Catcher continua simples)
@@ -200,16 +255,129 @@ export const ArcadeView = () => {
         return url.toString();
     };
 
+    const extractUuid = (value) => {
+        const s = String(value || '').trim();
+        const m = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        return m ? m[0] : '';
+    };
+
+    const applyPrivateRoomMatched = async (room) => {
+        const selfId = state?.user?.id;
+        const creatorId = room?.creator_id || null;
+        const challengerId = room?.opponent_id || null;
+
+        let creatorName = null;
+        let challengerName = null;
+        if (creatorId) {
+            const { data: prof } = await supabase
+                .from('profiles')
+                .select('username')
+                .eq('id', creatorId)
+                .maybeSingle();
+            creatorName = prof?.username || null;
+        }
+        if (challengerId) {
+            const { data: prof } = await supabase
+                .from('profiles')
+                .select('username')
+                .eq('id', challengerId)
+                .maybeSingle();
+            challengerName = prof?.username || null;
+        }
+
+        setPvpConfig(prev => ({
+            ...prev,
+            bet: Number(room?.bet_amount_mph || prev.bet || 0),
+            gameType: room?.game_type || prev.gameType,
+            isPrivate: true,
+            roomId: room?.id || prev.roomId,
+            gameId: room?.id || prev.gameId,
+            creatorId,
+            challengerId,
+            creatorAvatar: room?.creator_avatar || prev.creatorAvatar || null,
+            challengerAvatar: room?.opponent_avatar || prev.challengerAvatar || null,
+            creatorName: creatorName || prev.creatorName || null,
+            challengerName: challengerName || prev.challengerName || null,
+            opponentId: selfId && creatorId === selfId ? challengerId : creatorId,
+            opponentAvatar: selfId && creatorId === selfId ? (room?.opponent_avatar || prev.opponentAvatar || null) : (room?.creator_avatar || prev.opponentAvatar || null),
+            opponentName: selfId && creatorId === selfId ? (challengerName || prev.opponentName || null) : (creatorName || prev.opponentName || null)
+        }));
+
+        saveActivePvpRoomId(room?.id);
+        setPvpState('playing');
+        startBgm();
+    };
+
+    const applyPrivateRoomOpen = (room) => {
+        const selfId = state?.user?.id;
+        const maybeCreatorName = room?.creator_id && room.creator_id === selfId ? (state?.user?.username || null) : null;
+        setPvpConfig(prev => ({
+            ...prev,
+            bet: Number(room?.bet_amount_mph || prev.bet || 0),
+            gameType: room?.game_type || prev.gameType,
+            isPrivate: true,
+            roomId: room?.id || prev.roomId,
+            gameId: room?.id || prev.gameId,
+            creatorId: room?.creator_id || prev.creatorId || selfId,
+            creatorAvatar: room?.creator_avatar || prev.creatorAvatar || prev.char,
+            creatorName: maybeCreatorName || prev.creatorName || null,
+            challengerId: room?.opponent_id || prev.challengerId || null,
+            challengerAvatar: room?.opponent_avatar || prev.challengerAvatar || null,
+            challengerName: prev.challengerName || null
+        }));
+        saveActivePvpRoomId(room?.id);
+        setPvpState('waiting_room');
+        setWaitingTimer(0);
+    };
+
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const room = params.get('room');
-        if (room) {
+        const cleanRoom = extractUuid(room);
+        if (cleanRoom) {
             setTab('pvp');
             setPvpView('lobby');
-            setPendingRoomId(room);
+            setPendingRoomId(cleanRoom);
             setShowJoinModal(true);
         }
     }, []);
+
+    useEffect(() => {
+        if (tab !== 'pvp') return;
+        const activeRoom = extractUuid(localStorage.getItem(getActivePvpRoomKey()));
+        if (!activeRoom) return;
+
+        const resume = async () => {
+            try {
+                const { data: room } = await supabase
+                    .from('pvp_rooms')
+                    .select('id,status,creator_id,opponent_id,creator_avatar,opponent_avatar,game_type,bet_amount_mph')
+                    .eq('id', activeRoom)
+                    .maybeSingle();
+
+                if (!room?.id) {
+                    clearActivePvpRoomId();
+                    return;
+                }
+
+                if (room.status === 'matched' && room.opponent_id) {
+                    await applyPrivateRoomMatched(room);
+                    return;
+                }
+
+                if (room.status === 'open' && room.creator_id === state.user.id) {
+                    applyPrivateRoomOpen(room);
+                    return;
+                }
+
+                if (room.status === 'cancelled' || room.status === 'completed') {
+                    clearActivePvpRoomId();
+                }
+            } catch {}
+        };
+
+        resume();
+    }, [tab, state.user.id]);
 
     useEffect(() => {
         const userId = state.user.id;
@@ -241,21 +409,13 @@ export const ArcadeView = () => {
 
         setIsJoiningRoom(true);
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const accessToken = session?.access_token;
-            if (!accessToken) throw new Error('Sessão expirada. Faça login novamente.');
+            const roomId = extractUuid(pendingRoomId);
+            if (!roomId) throw new Error('Link inválido: sala não encontrada.');
 
-            const { data, error } = await supabase.functions.invoke('pvp-room-join', {
-                body: {
-                    room_id: pendingRoomId,
-                    password: joinPassword || '',
-                    opponent_avatar: pvpConfig.char
-                },
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    'x-user-jwt': accessToken,
-                    apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
-                }
+            const { data, error } = await supabase.rpc('join_pvp_room', {
+                p_room_id: roomId,
+                p_password: joinPassword || '',
+                p_opponent_avatar: pvpConfig.char
             });
 
             if (error) throw error;
@@ -269,29 +429,37 @@ export const ArcadeView = () => {
                 }
             }));
 
-            setPvpConfig(prev => ({
-                ...prev,
-                bet: Number(data.bet_amount_mph || prev.bet),
-                gameType: data.game_type || prev.gameType,
-                isPrivate: true,
-                roomId: data.room_id,
-                gameId: data.room_id
-            }));
+            const { data: room } = await supabase
+                .from('pvp_rooms')
+                .select('id,status,creator_id,opponent_id,creator_avatar,opponent_avatar,game_type,bet_amount_mph')
+                .eq('id', roomId)
+                .maybeSingle();
+
+            if (room?.id && room.status === 'matched' && room.opponent_id) {
+                await applyPrivateRoomMatched(room);
+            } else if (room?.id && room.status === 'open') {
+                applyPrivateRoomOpen(room);
+            } else {
+                setPvpConfig(prev => ({
+                    ...prev,
+                    bet: Number(data.bet_amount_mph || prev.bet),
+                    gameType: data.game_type || prev.gameType,
+                    isPrivate: true,
+                    roomId: roomId,
+                    gameId: roomId
+                }));
+                saveActivePvpRoomId(roomId);
+                setPvpState('playing');
+                startBgm();
+            }
 
             setShowJoinModal(false);
             setJoinPassword('');
             clearRoomFromUrl();
-            setPvpState('playing');
-            startBgm();
             addNotification('Você entrou na sala privada.', 'success');
         } catch (err) {
             console.error('Erro ao entrar na sala:', err);
-            const msg =
-                err?.context?.body?.error ||
-                err?.context?.body?.message ||
-                err?.message ||
-                'Erro ao entrar na sala.';
-            addNotification(String(msg), 'danger');
+            addNotification(String(getEdgeErrorMessage(err, 'Erro ao entrar na sala.')), 'danger');
         } finally {
             setIsJoiningRoom(false);
         }
@@ -308,23 +476,12 @@ export const ArcadeView = () => {
         if (pvpConfig.isPrivate) {
             setIsSearching(true);
             try {
-                const { data: { session } } = await supabase.auth.getSession();
-                const accessToken = session?.access_token;
-                if (!accessToken) throw new Error('Sessão expirada. Faça login novamente.');
-
-                const { data, error } = await supabase.functions.invoke('pvp-room-create', {
-                    body: {
-                        game_type: pvpConfig.gameType,
-                        bet_amount_mph: pvpConfig.bet,
-                        creator_avatar: pvpConfig.char,
-                        is_private: true,
-                        password: pvpConfig.roomPassword || ''
-                    },
-                    headers: {
-                        Authorization: `Bearer ${accessToken}`,
-                        'x-user-jwt': accessToken,
-                        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
-                    }
+                const { data, error } = await supabase.rpc('create_pvp_room', {
+                    p_game_type: pvpConfig.gameType,
+                    p_bet_amount_mph: pvpConfig.bet,
+                    p_creator_avatar: pvpConfig.char,
+                    p_is_private: true,
+                    p_password: pvpConfig.roomPassword || ''
                 });
 
                 if (error) throw error;
@@ -336,18 +493,20 @@ export const ArcadeView = () => {
                     wallet: { ...prev.wallet, mph: Number(data.balance_mph || prev.wallet.mph || 0) }
                 }));
 
-                setPvpConfig(prev => ({ ...prev, gameId: roomId, roomId, opponentAvatar: null }));
-                setPvpState('waiting_room');
-                setWaitingTimer(0);
+                applyPrivateRoomOpen({
+                    id: roomId,
+                    status: 'open',
+                    creator_id: state.user.id,
+                    opponent_id: null,
+                    creator_avatar: pvpConfig.char,
+                    opponent_avatar: null,
+                    game_type: pvpConfig.gameType,
+                    bet_amount_mph: pvpConfig.bet
+                });
                 addNotification('Sala privada criada. Compartilhe o link com a senha.', 'success');
             } catch (err) {
                 console.error('Erro ao criar sala privada:', err);
-                const msg =
-                    err?.context?.body?.error ||
-                    err?.context?.body?.message ||
-                    err?.message ||
-                    'Erro ao criar sala privada.';
-                addNotification(String(msg), 'danger');
+                addNotification(String(getEdgeErrorMessage(err, 'Erro ao criar sala privada.')), 'danger');
                 stopBgm();
             } finally {
                 setIsSearching(false);
@@ -376,8 +535,38 @@ export const ArcadeView = () => {
             stopBgm(); // Stop BGM on cancel
 
             if (pvpConfig.isPrivate && pvpConfig.roomId) {
+                const roomId = extractUuid(pvpConfig.roomId);
+                if (!roomId) {
+                    clearActivePvpRoomId();
+                    setPvpState('lobby');
+                    return;
+                }
                 try {
-                    const { data, error } = await supabase.rpc('cancel_pvp_room', { p_room_id: pvpConfig.roomId });
+                    const { data: room } = await supabase
+                        .from('pvp_rooms')
+                        .select('id,status,creator_id,opponent_id,creator_avatar,opponent_avatar,game_type,bet_amount_mph')
+                        .eq('id', roomId)
+                        .maybeSingle();
+
+                    if (!room?.id) {
+                        clearActivePvpRoomId();
+                        setPvpState('lobby');
+                        return;
+                    }
+
+                    if (room.status === 'matched' && room.opponent_id) {
+                        addNotification('A sala já possui oponente. Retomando partida...', 'info');
+                        await applyPrivateRoomMatched(room);
+                        return;
+                    }
+
+                    if (room.status === 'cancelled' || room.status === 'completed') {
+                        clearActivePvpRoomId();
+                        setPvpState('lobby');
+                        return;
+                    }
+
+                    const { data, error } = await supabase.rpc('cancel_pvp_room', { p_room_id: roomId });
                     if (error) throw error;
                     if (!data?.ok) throw new Error(data?.error || 'Falha ao cancelar sala.');
 
@@ -385,11 +574,11 @@ export const ArcadeView = () => {
                         ...prev,
                         wallet: { ...prev.wallet, mph: Number(data.balance_mph || prev.wallet.mph || 0) }
                     }));
+                    clearActivePvpRoomId();
+                    setPvpState('lobby');
                 } catch (err) {
                     console.error('Erro ao cancelar sala:', err);
                     addNotification(err?.message || 'Erro ao cancelar sala.', 'danger');
-                } finally {
-                    setPvpState('lobby');
                 }
                 return;
             }
@@ -417,6 +606,7 @@ export const ArcadeView = () => {
                         setOpenGames(prev => prev.filter(g => g.id !== pvpConfig.gameId));
                     }
                     clearPvpTimeoutMeta();
+                    ensureOpponentAssigned();
                     setPvpState('playing');
                 }
             }, 1000);
@@ -435,6 +625,7 @@ export const ArcadeView = () => {
             } else {
                 clearPvpTimeoutMeta();
                 addNotification(t('arcade.autoStart'), 'info');
+                ensureOpponentAssigned();
                 setPvpState('playing');
             }
         }
@@ -447,29 +638,57 @@ export const ArcadeView = () => {
         if (!pvpConfig.roomId) return;
         if (!supabase?.channel) return;
 
+        const roomId = extractUuid(pvpConfig.roomId);
+        if (!roomId) return;
+
         const channel = supabase
-            .channel(`pvp_room_${pvpConfig.roomId}`)
+            .channel(`pvp_room_${roomId}`)
             .on(
                 'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'pvp_rooms', filter: `id=eq.${pvpConfig.roomId}` },
+                { event: 'UPDATE', schema: 'public', table: 'pvp_rooms', filter: `id=eq.${roomId}` },
                 async (payload) => {
                     const updated = payload?.new || {};
                     if (updated?.status === 'matched' && updated?.opponent_id) {
-                        setPvpConfig(prev => ({
-                            ...prev,
-                            opponentAvatar: updated?.opponent_avatar || prev.opponentAvatar,
-                            opponentId: updated?.opponent_id
-                        }));
-                        setPvpState('playing');
+                        const { data: room } = await supabase
+                            .from('pvp_rooms')
+                            .select('id,status,creator_id,opponent_id,creator_avatar,opponent_avatar,game_type,bet_amount_mph')
+                            .eq('id', roomId)
+                            .maybeSingle();
+                        if (room?.id && room.status === 'matched' && room.opponent_id) {
+                            await applyPrivateRoomMatched(room);
+                        }
                     }
                     if (updated?.status === 'cancelled') {
+                        clearActivePvpRoomId();
                         setPvpState('lobby');
                     }
                 }
             )
             .subscribe();
 
+        let pollInterval;
+        pollInterval = setInterval(async () => {
+            try {
+                const { data: room } = await supabase
+                    .from('pvp_rooms')
+                    .select('id,status,creator_id,opponent_id,creator_avatar,opponent_avatar,game_type,bet_amount_mph')
+                    .eq('id', roomId)
+                    .maybeSingle();
+
+                if (!room) return;
+
+                if (room.status === 'matched' && room.opponent_id) {
+                    await applyPrivateRoomMatched(room);
+                }
+                if (room.status === 'cancelled') {
+                    clearActivePvpRoomId();
+                    setPvpState('lobby');
+                }
+            } catch {}
+        }, 2000);
+
         return () => {
+            try { clearInterval(pollInterval); } catch {}
             try { supabase.removeChannel(channel); } catch {}
         };
     }, [pvpState, pvpConfig.isPrivate, pvpConfig.roomId]);
@@ -479,64 +698,75 @@ export const ArcadeView = () => {
         if (!pvpConfig.roomId) return;
         if (!supabase?.channel) return;
 
-        const roomId = pvpConfig.roomId;
+        const roomId = extractUuid(pvpConfig.roomId);
+        if (!roomId) return;
+
+        const checkRoomResult = async () => {
+            try {
+                const { data: room } = await supabase
+                    .from('pvp_rooms')
+                    .select('creator_id, opponent_id, creator_score, opponent_score, winner_id, bet_amount_mph, status')
+                    .eq('id', roomId)
+                    .maybeSingle();
+
+                if (!room || room.status !== 'completed') return;
+
+                clearActivePvpRoomId();
+                const bet = Number(room.bet_amount_mph || 0);
+                const selfIsCreator = state.user.id === room.creator_id;
+                const selfScore = Number(selfIsCreator ? room.creator_score : room.opponent_score || 0);
+                const otherScore = Number(selfIsCreator ? room.opponent_score : room.creator_score || 0);
+
+                let outcome = 'loss';
+                let prize = 0;
+                if (!room.winner_id) {
+                    outcome = 'draw';
+                    prize = bet * 0.85;
+                } else if (room.winner_id === state.user.id) {
+                    outcome = 'win';
+                    prize = bet * 2 * 0.85;
+                }
+
+                playResultSound(outcome);
+
+                const { data: walletRow } = await supabase
+                    .from('wallets')
+                    .select('balance_mph')
+                    .eq('user_id', state.user.id)
+                    .maybeSingle();
+
+                if (walletRow) {
+                    setState(prev => ({
+                        ...prev,
+                        wallet: { ...prev.wallet, mph: Number(walletRow.balance_mph || 0) }
+                    }));
+                }
+
+                setPvpResult({ outcome, prize, score: { player: selfScore, opponent: otherScore } });
+                setPvpState('result');
+            } catch (err) {
+                console.error('Erro ao obter resultado PvP:', err);
+            }
+        };
+
         const channel = supabase
             .channel(`pvp_room_result_${roomId}`)
             .on(
                 'postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'pvp_rooms', filter: `id=eq.${roomId}` },
                 async (payload) => {
-                    const updated = payload?.new || {};
-                    if (updated?.status !== 'completed') return;
-                    try {
-                        const { data: room } = await supabase
-                            .from('pvp_rooms')
-                            .select('creator_id, opponent_id, creator_score, opponent_score, winner_id, bet_amount_mph')
-                            .eq('id', roomId)
-                            .maybeSingle();
-
-                        if (!room) return;
-
-                        const bet = Number(room.bet_amount_mph || 0);
-                        const selfIsCreator = state.user.id === room.creator_id;
-                        const selfScore = Number(selfIsCreator ? room.creator_score : room.opponent_score || 0);
-                        const otherScore = Number(selfIsCreator ? room.opponent_score : room.creator_score || 0);
-
-                        let outcome = 'loss';
-                        let prize = 0;
-                        if (!room.winner_id) {
-                            outcome = 'draw';
-                            prize = bet * 0.85;
-                        } else if (room.winner_id === state.user.id) {
-                            outcome = 'win';
-                            prize = bet * 2 * 0.85;
-                        }
-
-                        playResultSound(outcome);
-
-                        const { data: walletRow } = await supabase
-                            .from('wallets')
-                            .select('balance_mph')
-                            .eq('user_id', state.user.id)
-                            .maybeSingle();
-
-                        if (walletRow) {
-                            setState(prev => ({
-                                ...prev,
-                                wallet: { ...prev.wallet, mph: Number(walletRow.balance_mph || 0) }
-                            }));
-                        }
-
-                        setPvpResult({ outcome, prize, score: { player: selfScore, opponent: otherScore } });
-                        setPvpState('result');
-                    } catch (err) {
-                        console.error('Erro ao obter resultado PvP:', err);
+                    if (payload?.new?.status === 'completed') {
+                        checkRoomResult();
                     }
                 }
             )
             .subscribe();
 
+        const pollInterval = setInterval(checkRoomResult, 2000);
+        checkRoomResult(); // Immediate check
+
         return () => {
+            clearInterval(pollInterval);
             try { supabase.removeChannel(channel); } catch {}
         };
     }, [pvpState, pvpConfig.roomId, state.user.id]);
@@ -569,10 +799,11 @@ export const ArcadeView = () => {
         stopBgm(); // Stop BGM on Game Over
 
         if (pvpConfig.roomId) {
+            const roomId = extractUuid(pvpConfig.roomId);
             const playerScore = Number(finalScore?.player || 0);
             try {
                 const { data, error } = await supabase.rpc('submit_pvp_score', {
-                    p_room_id: pvpConfig.roomId,
+                    p_room_id: roomId,
                     p_score: playerScore
                 });
                 if (error) throw error;
@@ -595,6 +826,7 @@ export const ArcadeView = () => {
 
                 setPvpResult({ outcome, prize, score: { player: playerScore } });
                 setPvpState('result');
+                clearActivePvpRoomId();
                 return;
             } catch (err) {
                 console.error('Erro ao finalizar PvP:', err);
@@ -897,6 +1129,15 @@ export const ArcadeView = () => {
                                         betAmount={pvpConfig.bet}
                                         playerChar={pvpConfig.char}
                                         botChar={pvpConfig.opponentAvatar || 'mp_p6'}
+                                        botName={pvpConfig.opponentName || null}
+                                        roomId={pvpConfig.roomId || null}
+                                        selfId={state.user.id}
+                                        creatorId={pvpConfig.creatorId || null}
+                                        challengerId={pvpConfig.challengerId || null}
+                                        creatorAvatar={pvpConfig.creatorAvatar || null}
+                                        challengerAvatar={pvpConfig.challengerAvatar || null}
+                                        creatorName={pvpConfig.creatorName || null}
+                                        challengerName={pvpConfig.challengerName || null}
                                         difficulty={getNextBotDifficulty ? getNextBotDifficulty() : 'hard'}
                                         isMuted={isMuted}
                                     />
@@ -906,6 +1147,15 @@ export const ArcadeView = () => {
                                         betAmount={pvpConfig.bet}
                                         playerChar={pvpConfig.char}
                                         botChar={pvpConfig.opponentAvatar || 'mp_p6'}
+                                        botName={pvpConfig.opponentName || null}
+                                        roomId={pvpConfig.roomId || null}
+                                        selfId={state.user.id}
+                                        creatorId={pvpConfig.creatorId || null}
+                                        challengerId={pvpConfig.challengerId || null}
+                                        creatorAvatar={pvpConfig.creatorAvatar || null}
+                                        challengerAvatar={pvpConfig.challengerAvatar || null}
+                                        creatorName={pvpConfig.creatorName || null}
+                                        challengerName={pvpConfig.challengerName || null}
                                         difficulty={getNextBotDifficulty ? getNextBotDifficulty() : 'medium'}
                                         isMuted={isMuted}
                                     />
