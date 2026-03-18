@@ -267,6 +267,15 @@ export const AppProvider = ({ children }) => {
                         role: profile.role || 'user',
                         account_status: profile.account_status, // Importante para controle
                         automatic_withdrawal: profile.automatic_withdrawal || false,
+                        wallets: {
+                            ...(prev.user.wallets || {}),
+                            usdt_bep20: profile.wallet_usdt_bep20 || '',
+                            usdt_polygon: profile.wallet_usdt_polygon || '',
+                            usdt_trc20: profile.wallet_usdt_trc20 || '',
+                            usdt_arbitrum: profile.wallet_usdt_arbitrum || '',
+                            usdc_arbitrum: profile.wallet_usdc_arbitrum || '',
+                            pix: profile.pix_key || ''
+                        },
                         isAuthenticated: true // Flag para controle de rota
                     },
                     wallet: {
@@ -455,7 +464,8 @@ export const AppProvider = ({ children }) => {
       ...prev,
       wallet: {
         ...prev.wallet,
-        [currency]: prev.wallet[currency] + amount,
+        [currency]: (prev.wallet[currency] || 0) + amount,
+        ...(currency === 'usd' ? { balance_usd: (prev.wallet.balance_usd || prev.wallet.usd || 0) + amount } : {}),
         deposited: type === 'deposit' ? prev.wallet.deposited + amount : prev.wallet.deposited,
         withdrawn: type === 'withdraw' ? prev.wallet.withdrawn + Math.abs(amount) : prev.wallet.withdrawn
       }

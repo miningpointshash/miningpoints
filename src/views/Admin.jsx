@@ -682,12 +682,22 @@ export const AdminView = ({ navigate }) => {
 
                 if (!isMissingFn) throw rpcErr;
 
-                const { error: updateError } = await supabase
-                    .from('profiles')
-                    .update({ username: normalized })
-                    .eq('id', userId);
+                const { data: { session } } = await supabase.auth.getSession();
+                const accessToken = session?.access_token;
+                if (!accessToken) throw new Error('Sessão expirada. Faça login novamente.');
 
-                if (updateError) throw updateError;
+                const { data, error } = await supabase.functions.invoke('admin-update-username', {
+                    body: { target_user_id: userId, new_username: normalized },
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        'x-user-jwt': accessToken,
+                        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
+                    }
+                });
+
+                if (error) throw error;
+                if (!data?.ok) throw new Error(data?.error || 'Erro ao atualizar username.');
+                finalUsername = data?.new_username || normalized;
             }
 
             setUsers(prev => prev.map(u => u.id === userId ? { ...u, username: finalUsername } : u));

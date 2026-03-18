@@ -561,39 +561,48 @@ export const WalletView = ({ navigate }) => {
     }
 
     if (mode === 'swap') {
-        if (swapDir === 'usd_to_mph') {
-            if (state.wallet.usd < val) return alert("Saldo insuficiente em USD");
-            const mphAmount = val * 100;
-            setState(prev => ({
-                ...prev,
-                wallet: {
-                    ...prev.wallet,
-                    usd: prev.wallet.usd - val,
-                    mph: prev.wallet.mph + mphAmount
-                }
-            }));
-            addNotification(`Swap USDT -> MPH: -$${val} / +${mphAmount} MPH`, 'swap');
-        } else {
-            // mph_to_usd
-            const mphVal = val; // input em MPH
-            if (state.wallet.mph < mphVal) return alert("Saldo insuficiente em MPH");
-            
-            // Burn 2%
-            const burnAmount = mphVal * 0.02;
-            const netMph = mphVal - burnAmount;
-            const usdCredit = netMph / 100;
+        setIsLoading(true);
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session?.user?.id) return alert("Sessão expirada. Faça login novamente.");
 
-            setState(prev => ({
-                ...prev,
-                wallet: {
-                    ...prev.wallet,
-                    mph: prev.wallet.mph - mphVal,
-                    usd: prev.wallet.usd + usdCredit
-                }
-            }));
-            addNotification(`Swap MPH -> USDT: -${mphVal} MPH / +$${usdCredit.toFixed(2)} (Burn: -${burnAmount.toFixed(0)} MPH)`, 'swap');
+          const { data, error } = await supabase.rpc('swap_wallet', {
+            p_user_id: session.user.id,
+            p_direction: swapDir,
+            p_amount: val
+          });
+
+          if (error) throw error;
+          if (!data?.ok) throw new Error(data?.error || 'Falha no swap.');
+
+          const newUsd = Number(data.balance_usd || 0);
+          const newMph = Number(data.balance_mph || 0);
+          const burnMph = Number(data.burn_mph || 0);
+
+          setState(prev => ({
+            ...prev,
+            wallet: {
+              ...prev.wallet,
+              usd: newUsd,
+              balance_usd: newUsd,
+              mph: newMph
+            }
+          }));
+
+          if (swapDir === 'usd_to_mph') {
+            addNotification(`Swap USDT -> MPH: -$${val} / +${Number(data.mph_delta || 0).toFixed(0)} MPH`, 'swap');
+          } else {
+            addNotification(`Swap MPH -> USDT: -${val} MPH / +$${Number(data.usd_delta || 0).toFixed(2)} (Burn: -${burnMph.toFixed(0)} MPH)`, 'swap');
+          }
+
+          setMode('main');
+          setInputValue('');
+        } catch (err) {
+          console.error("Erro no swap:", err);
+          alert(err.message || "Erro ao processar swap.");
+        } finally {
+          setIsLoading(false);
         }
-        setMode('main');
     }
   };
 

@@ -23,6 +23,8 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
     const [walletToken, setWalletToken] = useState('');
     const [supportMode, setSupportMode] = useState('main');
     const [sponsorName, setSponsorName] = useState('Carregando...');
+    const [isWalletTokenSending, setIsWalletTokenSending] = useState(false);
+    const [isWalletSaving, setIsWalletSaving] = useState(false);
 
     useEffect(() => {
         setSubTab(initialTab);
@@ -54,11 +56,84 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
         setState(prev => ({ ...prev, user: { ...prev.user, [field]: value } }));
     };
 
-    const handleSaveWallets = () => {
-        if (!walletToken) { alert('Por segurança, insira o token enviado ao seu e-mail.'); return; }
-        updateUserField('wallets', wallets);
-        addNotification('Carteiras atualizadas com sucesso!', 'success');
-        setWalletToken('');
+    const handleRequestWalletToken = async () => {
+        if (isWalletTokenSending) return;
+        setIsWalletTokenSending(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const accessToken = session?.access_token;
+            if (!accessToken) {
+                addNotification('Sessão expirada. Faça login novamente.', 'danger');
+                return;
+            }
+
+            const { data, error } = await supabase.functions.invoke('wallet-token-request', {
+                body: {},
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'x-user-jwt': accessToken,
+                    apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
+                }
+            });
+
+            if (error) throw error;
+            if (!data?.ok) throw new Error(data?.error || 'Falha ao solicitar token.');
+            addNotification('Token enviado para o seu e-mail.', 'success');
+        } catch (err) {
+            console.error('Erro ao solicitar token de carteira:', err);
+            const msg =
+                err?.context?.body?.error ||
+                err?.context?.body?.message ||
+                err?.message ||
+                'Erro ao solicitar token.';
+            addNotification(String(msg), 'danger');
+        } finally {
+            setIsWalletTokenSending(false);
+        }
+    };
+
+    const handleSaveWallets = async () => {
+        if (isWalletSaving) return;
+        if (!walletToken) {
+            alert('Por segurança, insira o token enviado ao seu e-mail.');
+            return;
+        }
+
+        setIsWalletSaving(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const accessToken = session?.access_token;
+            if (!accessToken) {
+                addNotification('Sessão expirada. Faça login novamente.', 'danger');
+                return;
+            }
+
+            const { data, error } = await supabase.functions.invoke('wallet-wallets-update', {
+                body: { token: walletToken, wallets },
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'x-user-jwt': accessToken,
+                    apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
+                }
+            });
+
+            if (error) throw error;
+            if (!data?.ok) throw new Error(data?.error || 'Falha ao salvar carteiras.');
+
+            updateUserField('wallets', data.wallets || wallets);
+            addNotification('Carteiras atualizadas com sucesso!', 'success');
+            setWalletToken('');
+        } catch (err) {
+            console.error('Erro ao salvar carteiras:', err);
+            const msg =
+                err?.context?.body?.error ||
+                err?.context?.body?.message ||
+                err?.message ||
+                'Erro ao salvar carteiras.';
+            addNotification(String(msg), 'danger');
+        } finally {
+            setIsWalletSaving(false);
+        }
     };
 
     const handleSaveUsername = () => {
@@ -158,7 +233,7 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                         </Button>
                     </Card>
                     <Card><h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><Key size={16} className="text-yellow-400"/> {t('menu.financialPwd')}</h4><input type="password" placeholder={t('menu.newFinancialPwd')} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white mb-2" value={financialPwd} onChange={(e) => setFinancialPwd(e.target.value)}/><Button onClick={handleSaveFinancialPwd} className="w-full text-xs py-2">{t('menu.setPwd')}</Button></Card>
-                    <Card className="border-green-900"><h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Wallet size={16} className="text-green-400"/> {t('menu.withdrawalWallets')}</h4><div className="space-y-3">{[{ k: 'usdt_bep20', l: 'USDT (BEP-20)' },{ k: 'usdt_polygon', l: 'USDT (Polygon)' },{ k: 'usdt_trc20', l: 'USDT (TRC-20)' },{ k: 'usdt_arbitrum', l: 'USDT (Arbitrum)' },{ k: 'usdc_arbitrum', l: 'USDC (Arbitrum)' },{ k: 'pix', l: 'Chave PIX' }].map((w) => (<div key={w.k}><label className="text-[10px] text-gray-500 uppercase">{w.l}</label><input type="text" placeholder={`Endereço ${w.l}`} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white focus:border-green-500 transition-colors" value={wallets[w.k]} onChange={(e) => setWallets({...wallets, [w.k]: e.target.value})}/></div>))}<div className="bg-yellow-900/20 p-3 rounded border border-yellow-900/50 mt-4"><div className="flex items-start gap-2 mb-2"><AlertTriangle size={16} className="text-yellow-500 shrink-0 mt-0.5"/><p className="text-[10px] text-yellow-200 leading-tight">{t('menu.walletSecurityWarning')}</p></div><div className="flex gap-2"><input type="text" placeholder={t('menu.securityToken')} className="flex-1 bg-black border border-yellow-700 rounded p-2 text-xs text-white" value={walletToken} onChange={(e) => setWalletToken(e.target.value)}/><button onClick={() => addNotification('Token de segurança enviado!', 'success')} className="bg-yellow-700 text-black font-bold text-xs px-3 rounded hover:bg-yellow-600 whitespace-nowrap">{t('menu.request')}</button></div></div><Button onClick={handleSaveWallets} variant="success" className="w-full text-xs py-3 flex items-center justify-center gap-2"><Save size={16}/> {t('menu.saveWallets')}</Button></div></Card>
+                    <Card className="border-green-900"><h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Wallet size={16} className="text-green-400"/> {t('menu.withdrawalWallets')}</h4><div className="space-y-3">{[{ k: 'usdt_bep20', l: 'USDT (BEP-20)' },{ k: 'usdt_polygon', l: 'USDT (Polygon)' },{ k: 'usdt_trc20', l: 'USDT (TRC-20)' },{ k: 'usdt_arbitrum', l: 'USDT (Arbitrum)' },{ k: 'usdc_arbitrum', l: 'USDC (Arbitrum)' },{ k: 'pix', l: 'Chave PIX' }].map((w) => (<div key={w.k}><label className="text-[10px] text-gray-500 uppercase">{w.l}</label><input type="text" placeholder={`Endereço ${w.l}`} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white focus:border-green-500 transition-colors" value={wallets[w.k]} onChange={(e) => setWallets({...wallets, [w.k]: e.target.value})}/></div>))}<div className="bg-yellow-900/20 p-3 rounded border border-yellow-900/50 mt-4"><div className="flex items-start gap-2 mb-2"><AlertTriangle size={16} className="text-yellow-500 shrink-0 mt-0.5"/><p className="text-[10px] text-yellow-200 leading-tight">{t('menu.walletSecurityWarning')}</p></div><div className="flex gap-2"><input type="text" placeholder={t('menu.securityToken')} className="flex-1 bg-black border border-yellow-700 rounded p-2 text-xs text-white" value={walletToken} onChange={(e) => setWalletToken(e.target.value)}/><button onClick={handleRequestWalletToken} disabled={isWalletTokenSending} className="bg-yellow-700 text-black font-bold text-xs px-3 rounded hover:bg-yellow-600 whitespace-nowrap disabled:opacity-60">{isWalletTokenSending ? 'Enviando...' : t('menu.request')}</button></div></div><Button onClick={handleSaveWallets} disabled={isWalletSaving} variant="success" className="w-full text-xs py-3 flex items-center justify-center gap-2"><Save size={16}/> {isWalletSaving ? 'Salvando...' : t('menu.saveWallets')}</Button></div></Card>
                  </div>
             </div>
         )

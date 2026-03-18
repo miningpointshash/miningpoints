@@ -3,6 +3,7 @@ import { AlertTriangle, History, Swords, Trophy, Users, Check, X, Share2, Copy, 
 import { AppContext } from '../context/AppContext';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { supabase } from '../lib/supabase';
 import { CyberRunnerGame } from '../components/games/CyberRunner';
 import { CryptoCatcherGame } from '../components/games/CryptoCatcher';
 import { HashHarvestGame } from '../components/games/HashHarvest';
@@ -22,6 +23,10 @@ export const ArcadeView = () => {
     const [pvpResult, setPvpResult] = useState(null);
     const [isSearching, setIsSearching] = useState(false);
     const [waitingTimer, setWaitingTimer] = useState(0); // Timer for waiting room
+    const [pendingRoomId, setPendingRoomId] = useState('');
+    const [joinPassword, setJoinPassword] = useState('');
+    const [showJoinModal, setShowJoinModal] = useState(false);
+    const [isJoiningRoom, setIsJoiningRoom] = useState(false);
     const [showCreditModal, setShowCreditModal] = useState(false);
     const [isMuted, setIsMuted] = useState(false); // Estado de Mute
     const { state, setState, addNotification, addGameResult, processPvpDistribution, consumeDailyCredit, buyCredits, t, getNextBotDifficulty } = useContext(AppContext);
@@ -133,13 +138,119 @@ export const ArcadeView = () => {
         setOpenGames(botGames);
     }, [state.bots]); // Recarrega se bots mudarem (ex: admin panel)
 
-    const handleCreateGame = () => {
+    const buildRoomLink = (roomId) => {
+        const url = new URL(window.location.href);
+        url.pathname = '/';
+        url.searchParams.set('view', 'arcade');
+        url.searchParams.set('room', roomId);
+        url.searchParams.delete('auth');
+        return url.toString();
+    };
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const room = params.get('room');
+        if (room) {
+            setTab('pvp');
+            setPvpView('lobby');
+            setPendingRoomId(room);
+            setShowJoinModal(true);
+        }
+    }, []);
+
+    const clearRoomFromUrl = () => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('room');
+        history.replaceState(null, '', url.toString());
+    };
+
+    const handleJoinRoom = async () => {
+        if (!pendingRoomId) return;
+        if (isJoiningRoom) return;
+
+        setIsJoiningRoom(true);
+        try {
+            const { data, error } = await supabase.rpc('join_pvp_room', {
+                p_room_id: pendingRoomId,
+                p_password: joinPassword || '',
+                p_opponent_avatar: pvpConfig.char
+            });
+
+            if (error) throw error;
+            if (!data?.ok) throw new Error(data?.error || 'Falha ao entrar na sala.');
+
+            setState(prev => ({
+                ...prev,
+                wallet: {
+                    ...prev.wallet,
+                    mph: Number(data.balance_mph || prev.wallet.mph || 0)
+                }
+            }));
+
+            setPvpConfig(prev => ({
+                ...prev,
+                bet: Number(data.bet_amount_mph || prev.bet),
+                gameType: data.game_type || prev.gameType,
+                isPrivate: true,
+                roomId: data.room_id,
+                gameId: data.room_id
+            }));
+
+            setShowJoinModal(false);
+            setJoinPassword('');
+            clearRoomFromUrl();
+            setPvpState('playing');
+            startBgm();
+            addNotification('Você entrou na sala privada.', 'success');
+        } catch (err) {
+            console.error('Erro ao entrar na sala:', err);
+            addNotification(err?.message || 'Erro ao entrar na sala.', 'danger');
+        } finally {
+            setIsJoiningRoom(false);
+        }
+    };
+
+    const handleCreateGame = async () => {
         if (state.wallet.mph < pvpConfig.bet) {
             addNotification(t('arcade.insufficientFunds'), 'danger');
             return;
         }
 
         startBgm(); // Start BGM on user interaction
+
+        if (pvpConfig.isPrivate) {
+            setIsSearching(true);
+            try {
+                const { data, error } = await supabase.rpc('create_pvp_room', {
+                    p_game_type: pvpConfig.gameType,
+                    p_bet_amount_mph: pvpConfig.bet,
+                    p_creator_avatar: pvpConfig.char,
+                    p_is_private: true,
+                    p_password: pvpConfig.roomPassword || ''
+                });
+
+                if (error) throw error;
+                if (!data?.ok) throw new Error(data?.error || 'Falha ao criar sala privada.');
+
+                const roomId = data.room_id;
+                setState(prev => ({
+                    ...prev,
+                    wallet: { ...prev.wallet, mph: Number(data.balance_mph || prev.wallet.mph || 0) }
+                }));
+
+                setPvpConfig(prev => ({ ...prev, gameId: roomId, roomId, opponentAvatar: null }));
+                setPvpState('waiting_room');
+                setWaitingTimer(0);
+                addNotification('Sala privada criada. Compartilhe o link com a senha.', 'success');
+            } catch (err) {
+                console.error('Erro ao criar sala privada:', err);
+                addNotification(err?.message || 'Erro ao criar sala privada.', 'danger');
+                stopBgm();
+            } finally {
+                setIsSearching(false);
+            }
+            return;
+        }
 
         // Debita aposta antecipadamente
         setState(prev => ({
@@ -163,9 +274,28 @@ export const ArcadeView = () => {
         setWaitingTimer(15); // Reduzido para 15s para teste mais rápido
     };
 
-    const handleCancelGame = () => {
+    const handleCancelGame = async () => {
         if (window.confirm(t('arcade.cancelConfirm'))) {
             stopBgm(); // Stop BGM on cancel
+
+            if (pvpConfig.isPrivate && pvpConfig.roomId) {
+                try {
+                    const { data, error } = await supabase.rpc('cancel_pvp_room', { p_room_id: pvpConfig.roomId });
+                    if (error) throw error;
+                    if (!data?.ok) throw new Error(data?.error || 'Falha ao cancelar sala.');
+
+                    setState(prev => ({
+                        ...prev,
+                        wallet: { ...prev.wallet, mph: Number(data.balance_mph || prev.wallet.mph || 0) }
+                    }));
+                } catch (err) {
+                    console.error('Erro ao cancelar sala:', err);
+                    addNotification(err?.message || 'Erro ao cancelar sala.', 'danger');
+                } finally {
+                    setPvpState('lobby');
+                }
+                return;
+            }
 
             // Remove do Book
             if (pvpConfig.gameId) {
@@ -184,7 +314,7 @@ export const ArcadeView = () => {
     // Timer da Sala de Espera
     React.useEffect(() => {
         let interval;
-        if (pvpState === 'waiting_room' && waitingTimer > 0) {
+        if (pvpState === 'waiting_room' && !pvpConfig.isPrivate && waitingTimer > 0) {
             interval = setInterval(() => {
                 setWaitingTimer(prev => prev - 1);
                 
@@ -197,7 +327,7 @@ export const ArcadeView = () => {
                     setPvpState('playing');
                 }
             }, 1000);
-        } else if (pvpState === 'waiting_room' && waitingTimer === 0) {
+        } else if (pvpState === 'waiting_room' && !pvpConfig.isPrivate && waitingTimer === 0) {
             // Timeout - Ninguém entrou
             addNotification(t('arcade.noHumanFound'), 'info');
             // Remove do book ao iniciar contra bot
@@ -207,7 +337,107 @@ export const ArcadeView = () => {
             setPvpState('playing');
         }
         return () => clearInterval(interval);
-    }, [pvpState, waitingTimer]);
+    }, [pvpState, waitingTimer, pvpConfig.isPrivate]);
+
+    useEffect(() => {
+        if (pvpState !== 'waiting_room') return;
+        if (!pvpConfig.isPrivate) return;
+        if (!pvpConfig.roomId) return;
+        if (!supabase?.channel) return;
+
+        const channel = supabase
+            .channel(`pvp_room_${pvpConfig.roomId}`)
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'pvp_rooms', filter: `id=eq.${pvpConfig.roomId}` },
+                async (payload) => {
+                    const updated = payload?.new || {};
+                    if (updated?.status === 'matched' && updated?.opponent_id) {
+                        setPvpConfig(prev => ({
+                            ...prev,
+                            opponentAvatar: updated?.opponent_avatar || prev.opponentAvatar,
+                            opponentId: updated?.opponent_id
+                        }));
+                        setPvpState('playing');
+                    }
+                    if (updated?.status === 'cancelled') {
+                        setPvpState('lobby');
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            try { supabase.removeChannel(channel); } catch {}
+        };
+    }, [pvpState, pvpConfig.isPrivate, pvpConfig.roomId]);
+
+    useEffect(() => {
+        if (pvpState !== 'result_waiting') return;
+        if (!pvpConfig.roomId) return;
+        if (!supabase?.channel) return;
+
+        const roomId = pvpConfig.roomId;
+        const channel = supabase
+            .channel(`pvp_room_result_${roomId}`)
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'pvp_rooms', filter: `id=eq.${roomId}` },
+                async (payload) => {
+                    const updated = payload?.new || {};
+                    if (updated?.status !== 'completed') return;
+                    try {
+                        const { data: room } = await supabase
+                            .from('pvp_rooms')
+                            .select('creator_id, opponent_id, creator_score, opponent_score, winner_id, bet_amount_mph')
+                            .eq('id', roomId)
+                            .maybeSingle();
+
+                        if (!room) return;
+
+                        const bet = Number(room.bet_amount_mph || 0);
+                        const selfIsCreator = state.user.id === room.creator_id;
+                        const selfScore = Number(selfIsCreator ? room.creator_score : room.opponent_score || 0);
+                        const otherScore = Number(selfIsCreator ? room.opponent_score : room.creator_score || 0);
+
+                        let outcome = 'loss';
+                        let prize = 0;
+                        if (!room.winner_id) {
+                            outcome = 'draw';
+                            prize = bet * 0.85;
+                        } else if (room.winner_id === state.user.id) {
+                            outcome = 'win';
+                            prize = bet * 2 * 0.85;
+                        }
+
+                        playResultSound(outcome);
+
+                        const { data: walletRow } = await supabase
+                            .from('wallets')
+                            .select('balance_mph')
+                            .eq('user_id', state.user.id)
+                            .maybeSingle();
+
+                        if (walletRow) {
+                            setState(prev => ({
+                                ...prev,
+                                wallet: { ...prev.wallet, mph: Number(walletRow.balance_mph || 0) }
+                            }));
+                        }
+
+                        setPvpResult({ outcome, prize, score: { player: selfScore, opponent: otherScore } });
+                        setPvpState('result');
+                    } catch (err) {
+                        console.error('Erro ao obter resultado PvP:', err);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            try { supabase.removeChannel(channel); } catch {}
+        };
+    }, [pvpState, pvpConfig.roomId, state.user.id]);
 
     const handleJoinGame = (gameId, betAmount) => {
         if (state.wallet.mph < betAmount) {
@@ -239,8 +469,44 @@ export const ArcadeView = () => {
         setTimeout(() => setPvpState('playing'), 1000);
     };
 
-    const handlePvpGameOver = (finalScore) => {
+    const handlePvpGameOver = async (finalScore) => {
         stopBgm(); // Stop BGM on Game Over
+
+        if (pvpConfig.roomId) {
+            const playerScore = Number(finalScore?.player || 0);
+            try {
+                const { data, error } = await supabase.rpc('submit_pvp_score', {
+                    p_room_id: pvpConfig.roomId,
+                    p_score: playerScore
+                });
+                if (error) throw error;
+
+                if (data?.status === 'waiting_opponent') {
+                    setPvpResult({ outcome: 'pending', prize: 0, score: { player: playerScore } });
+                    addNotification('Aguardando o oponente finalizar...', 'info');
+                    setPvpState('result_waiting');
+                    return;
+                }
+
+                const outcome = data?.outcome || 'draw';
+                const prize = Number(data?.prize_mph || 0);
+                playResultSound(outcome);
+
+                setState(prev => ({
+                    ...prev,
+                    wallet: { ...prev.wallet, mph: Number(data?.balance_mph || prev.wallet.mph || 0) }
+                }));
+
+                setPvpResult({ outcome, prize, score: { player: playerScore } });
+                setPvpState('result');
+                return;
+            } catch (err) {
+                console.error('Erro ao finalizar PvP:', err);
+                addNotification(err?.message || 'Erro ao finalizar partida.', 'danger');
+                setPvpState('lobby');
+                return;
+            }
+        }
 
         // Cálculo de resultado
         // Se Player > Bot: Ganha Aposta * 2 * 0.85 (15% taxa de cada = 30% total)
@@ -286,13 +552,44 @@ export const ArcadeView = () => {
     };
 
     const handleShareLink = () => {
-        const link = `${window.location.origin}/pvp/join/${pvpConfig.gameId || 'invite'}`;
+        const link = buildRoomLink(pvpConfig.roomId || pvpConfig.gameId || 'invite');
         navigator.clipboard.writeText(link);
         addNotification(t('arcade.linkCopied'), 'success');
     };
 
     return (
         <div className="px-4 pb-24 animate-fadeIn">
+            {showJoinModal && (
+                <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4 backdrop-blur">
+                    <Card className="max-w-sm w-full border-purple-500">
+                        <h3 className="text-lg font-bold text-white mb-2">Entrar em sala privada</h3>
+                        <p className="text-xs text-gray-400 mb-4">Informe a senha para entrar e iniciar a partida.</p>
+                        <input
+                            type="password"
+                            placeholder="Senha da sala"
+                            value={joinPassword}
+                            onChange={(e) => setJoinPassword(e.target.value)}
+                            className="w-full bg-black border border-gray-700 rounded p-2 text-sm text-white mb-3 focus:border-purple-500 outline-none"
+                        />
+                        <div className="flex gap-2">
+                            <Button
+                                onClick={() => { setShowJoinModal(false); setJoinPassword(''); clearRoomFromUrl(); }}
+                                variant="secondary"
+                                className="flex-1"
+                            >
+                                Cancelar
+                            </Button>
+                            <Button
+                                onClick={handleJoinRoom}
+                                className="flex-1"
+                                disabled={isJoiningRoom}
+                            >
+                                {isJoiningRoom ? 'Entrando...' : 'Entrar'}
+                            </Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
             
             {/* Cabeçalho Arcade */}
             <div className="text-center py-6">
@@ -466,24 +763,28 @@ export const ArcadeView = () => {
                                 <h3 className="text-2xl font-bold text-white mb-2 animate-pulse">{t('arcade.waitingChallenger')}</h3>
                                 <p className="text-gray-400 mb-6">{t('arcade.yourBet')} <span className="text-green-400 font-mono font-bold">{pvpConfig.bet} MPH</span></p>
                                 
-                                <div className="bg-gray-800 p-4 rounded-xl mb-6 border border-gray-700">
-                                    <p className="text-xs text-gray-400 mb-2">{t('arcade.shareLink')}</p>
-                                    <div className="flex gap-2">
-                                        <div className="bg-black/50 p-2 rounded text-xs text-gray-300 font-mono flex-1 truncate border border-gray-600">
-                                            {`${window.location.origin}/pvp/join/${pvpConfig.gameId || '...'}`}
+                                {pvpConfig.isPrivate && (
+                                    <div className="bg-gray-800 p-4 rounded-xl mb-6 border border-gray-700">
+                                        <p className="text-xs text-gray-400 mb-2">{t('arcade.shareLink')}</p>
+                                        <div className="flex gap-2">
+                                            <div className="bg-black/50 p-2 rounded text-xs text-gray-300 font-mono flex-1 truncate border border-gray-600">
+                                                {buildRoomLink(pvpConfig.roomId || pvpConfig.gameId || '...')}
+                                            </div>
+                                            <Button onClick={handleShareLink} size="sm" className="bg-blue-600 px-3">
+                                                <Copy size={14} />
+                                            </Button>
                                         </div>
-                                        <Button onClick={handleShareLink} size="sm" className="bg-blue-600 px-3">
-                                            <Copy size={14} />
-                                        </Button>
                                     </div>
-                                </div>
+                                )}
 
-                                <div className="text-4xl font-mono font-bold text-yellow-400 mb-8">
-                                    00:{waitingTimer < 10 ? `0${waitingTimer}` : waitingTimer}
-                                </div>
+                                {!pvpConfig.isPrivate && (
+                                    <div className="text-4xl font-mono font-bold text-yellow-400 mb-8">
+                                        00:{waitingTimer < 10 ? `0${waitingTimer}` : waitingTimer}
+                                    </div>
+                                )}
 
                                 <p className="text-xs text-gray-500 mb-8 max-w-xs mx-auto">
-                                    {t('arcade.visibleInBook')}
+                                    {pvpConfig.isPrivate ? 'Sala privada: somente convidados com link + senha.' : t('arcade.visibleInBook')}
                                 </p>
 
                                 <Button onClick={handleCancelGame} variant="outline" className="border-red-500 text-red-500 hover:bg-red-500/10 w-full">
@@ -527,6 +828,18 @@ export const ArcadeView = () => {
                             onRematch={handleCreateGame}
                             t={t}
                         />
+                    )}
+
+                    {pvpState === 'result_waiting' && (
+                        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-6 animate-fadeIn">
+                            <div className="text-center w-full max-w-md">
+                                <h3 className="text-2xl font-bold text-white mb-2">Aguardando oponente</h3>
+                                <p className="text-gray-400 mb-6">Sua pontuação já foi enviada. Assim que o outro jogador finalizar, o resultado será liberado.</p>
+                                <Button onClick={() => setPvpState('lobby')} variant="outline" className="w-full">
+                                    Voltar ao lobby
+                                </Button>
+                            </div>
+                        </div>
                     )}
                 </>
             )}
@@ -586,6 +899,7 @@ export const ArcadeView = () => {
 const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSearching, openGames = [], t, isMuted, toggleMute }) => {
     const [customBet, setCustomBet] = useState('');
     const [isPrivate, setIsPrivate] = useState(false);
+    const [privatePassword, setPrivatePassword] = useState('');
     const [lobbyStats, setLobbyStats] = useState({ totalPaid: 0, onlineUsers: 0 });
 
     useEffect(() => {
@@ -709,7 +1023,12 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
                         type="checkbox" 
                         id="privateRoom" 
                         checked={isPrivate} 
-                        onChange={(e) => { setIsPrivate(e.target.checked); setPvpConfig({...pvpConfig, isPrivate: e.target.checked}); }}
+                        onChange={(e) => { 
+                            const next = e.target.checked;
+                            setIsPrivate(next); 
+                            setPrivatePassword('');
+                            setPvpConfig({...pvpConfig, isPrivate: next, roomPassword: ''}); 
+                        }}
                         className="w-4 h-4 rounded border-gray-600 text-purple-600 focus:ring-purple-500 bg-gray-700"
                     />
                     <label htmlFor="privateRoom" className="text-xs text-gray-300 select-none cursor-pointer flex-1">
@@ -718,6 +1037,25 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
                     {isPrivate && <Lock size={14} className="text-yellow-500" />}
                 </div>
 
+                {isPrivate && (
+                    <div className="mb-4">
+                        <input
+                            type="password"
+                            placeholder="Senha da sala (4 a 32)"
+                            value={privatePassword}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                setPrivatePassword(v);
+                                setPvpConfig({ ...pvpConfig, roomPassword: v });
+                            }}
+                            className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white text-sm focus:border-purple-500 outline-none font-mono"
+                        />
+                        <p className="text-[10px] text-gray-500 mt-2">
+                            Compartilhe o link + senha com quem você quer jogar.
+                        </p>
+                    </div>
+                )}
+
                 <p className="text-[10px] text-gray-500 mt-2 text-center">
                     {t('arcade.systemFee').replace('170%', `${(pvpConfig.bet * 2 * 0.85).toFixed(0)} MPH (170%)`)}
                 </p>
@@ -725,7 +1063,7 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
 
             <Button 
                 onClick={() => { playClick(); onCreate(); }}
-                disabled={isSearching || pvpConfig.bet <= 0}
+                disabled={isSearching || pvpConfig.bet <= 0 || (isPrivate && privatePassword.trim().length < 4)}
                 className={`w-full py-4 text-lg font-black bg-gradient-to-r from-purple-600 to-pink-600 border-0 shadow-lg hover:scale-[1.02] transition-transform ${isSearching ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
                 {isSearching ? t('arcade.creating') : t('arcade.createRoom')}
@@ -810,7 +1148,9 @@ const PvpResult = ({ pvpResult, onLobby, onRematch, t }) => {
         <div className="bg-gray-900 rounded-xl p-4 mb-6 max-w-xs mx-auto border border-gray-800">
             <div className="flex justify-between mb-2">
                 <span className="text-xs text-gray-400">{t('arcade.finalScore')}</span>
-                <span className="text-xs font-bold text-white">{pvpResult.score.player} x {pvpResult.score.bot}</span>
+                <span className="text-xs font-bold text-white">
+                    {Number(pvpResult?.score?.player || 0)} x {Number(pvpResult?.score?.opponent ?? pvpResult?.score?.bot ?? 0)}
+                </span>
             </div>
             <div className="flex justify-between items-center pt-2 border-t border-gray-800">
                 <span className="text-xs text-gray-400">{t('arcade.prizeReceived')}</span>
