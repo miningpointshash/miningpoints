@@ -10,7 +10,9 @@ export const CryptoCatcherGame = ({ onGameOver, onExit }) => {
     const [lives, setLives] = useState(3);
     const [gameState, setGameState] = useState('start'); // start, playing, gameover
     const [audioEnabled, setAudioEnabled] = useState(true);
+    const [difficultyLevel, setDifficultyLevel] = useState(1);
     const requestRef = useRef();
+    const timeLeftRef = useRef(120);
     
     // Game State Ref
     const gameData = useRef({
@@ -21,6 +23,15 @@ export const CryptoCatcherGame = ({ onGameOver, onExit }) => {
         active: false,
         lastSpawn: 0
     });
+
+    useEffect(() => {
+        timeLeftRef.current = timeLeft;
+        const elapsed = 120 - timeLeft;
+        let lvl = 1 + Math.floor(elapsed / 15);
+        if (timeLeft <= 30) lvl += 2;
+        lvl = Math.max(1, Math.min(10, lvl));
+        setDifficultyLevel(lvl);
+    }, [timeLeft]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -56,6 +67,11 @@ export const CryptoCatcherGame = ({ onGameOver, onExit }) => {
         const state = gameData.current;
 
         if (!state.active) return;
+        const tl = timeLeftRef.current;
+        const elapsed = 120 - tl;
+        const mainProgress = Math.max(0, Math.min(1, elapsed / 90));
+        const endgameProgress = tl <= 30 ? Math.max(0, Math.min(1, (30 - tl) / 30)) : 0;
+        const difficultyFactor = 1 + mainProgress * 0.55 + endgameProgress * 0.9;
 
         // Clear
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -92,7 +108,8 @@ export const CryptoCatcherGame = ({ onGameOver, onExit }) => {
         ctx.fillRect(b.x, b.y, b.w, 5);
 
         // --- SPAWN ITEMS ---
-        const spawnRate = Math.max(15, 45 - Math.floor((120 - timeLeft) / 3));
+        const spawnRateBase = Math.max(14, 44 - Math.floor(elapsed / 3));
+        const spawnRate = Math.max(8, Math.floor(spawnRateBase / difficultyFactor));
         
         if (state.frameCount - state.lastSpawn > spawnRate) {
             const rand = Math.random();
@@ -105,7 +122,7 @@ export const CryptoCatcherGame = ({ onGameOver, onExit }) => {
                 x: Math.random() * (canvas.width - 30) + 15,
                 y: -30,
                 type,
-                speed: 3.5 + Math.random() * 3 + ((120 - timeLeft) / 40),
+                speed: (3.0 + Math.random() * 2.8 + (elapsed / 55)) * difficultyFactor,
                 r: 15,
                 angle: 0
             });
@@ -196,6 +213,8 @@ export const CryptoCatcherGame = ({ onGameOver, onExit }) => {
         setLives(3);
         setScore(0);
         setTimeLeft(120);
+        setDifficultyLevel(1);
+        timeLeftRef.current = 120;
         gameData.current.active = true;
         gameData.current.score = 0;
         gameData.current.items = [];
@@ -272,6 +291,11 @@ export const CryptoCatcherGame = ({ onGameOver, onExit }) => {
                     <div className="flex gap-2">
                         <div className="bg-black/50 px-3 py-1 rounded-full border border-green-500 text-green-400 font-mono font-bold flex items-center gap-2 text-xs">
                             <Clock size={14}/> {timeLeft}s
+                        </div>
+                        <div className={`bg-black/50 px-3 py-1 rounded-full border font-mono font-bold flex items-center gap-2 text-xs ${
+                            timeLeft <= 30 ? 'border-pink-500 text-pink-400' : 'border-purple-500 text-purple-400'
+                        }`}>
+                            LV {difficultyLevel}
                         </div>
                         <div className="bg-black/50 px-3 py-1 rounded-full border border-red-500 text-red-400 font-mono font-bold flex items-center gap-1 text-xs">
                             <Heart size={14} fill="currentColor"/> {lives}

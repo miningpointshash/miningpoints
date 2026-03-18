@@ -253,6 +253,78 @@ const FinancialHistoryList = ({ userId }) => {
     );
 };
 
+const PvpVolumeViewer = ({ userId, username, onClose }) => {
+    const [loading, setLoading] = useState(true);
+    const [rows, setRows] = useState([]);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            setLoading(true);
+            try {
+                const { data, error } = await supabase.rpc('get_pvp_downline_volume_by_level', {
+                    p_root_user_id: userId,
+                    p_max_level: 7
+                });
+                if (error) throw error;
+                setRows(Array.isArray(data) ? data : []);
+            } catch (e) {
+                console.error('Erro ao buscar volume PvP:', e);
+                setRows([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchData();
+    }, [userId]);
+
+    const total = (rows || []).reduce((acc, r) => acc + Number(r?.volume_mph || 0), 0);
+
+    return (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+            <Card className="w-full max-w-md bg-gray-900 border-gray-700 p-0 overflow-hidden">
+                <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+                    <div>
+                        <h3 className="font-bold text-white flex items-center gap-2">
+                            <TrendingUp size={18} className="text-pink-400" />
+                            Volume PvP (7 gerações)
+                        </h3>
+                        <p className="text-xs text-gray-400">{username}</p>
+                    </div>
+                    <Button size="icon" variant="ghost" onClick={onClose}><X size={20} /></Button>
+                </div>
+                <div className="p-4">
+                    {loading ? (
+                        <div className="text-center py-8 text-gray-500">Carregando...</div>
+                    ) : (
+                        <>
+                            <div className="space-y-2">
+                                {[1, 2, 3, 4, 5, 6, 7].map((lvl) => {
+                                    const row = (rows || []).find((r) => Number(r.level) === lvl);
+                                    const members = Number(row?.members || 0);
+                                    const vol = Number(row?.volume_mph || 0);
+                                    return (
+                                        <div key={lvl} className="bg-black/40 border border-gray-800 rounded-lg p-3 flex items-center justify-between">
+                                            <div className="text-xs text-gray-300 font-bold">Nível {lvl}</div>
+                                            <div className="text-right">
+                                                <div className="text-[10px] text-gray-500">{members} membros</div>
+                                                <div className="text-xs font-mono font-bold text-pink-400">{vol.toFixed(2)} MPH</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <div className="mt-4 bg-gray-800/30 border border-gray-700 rounded-lg p-3 flex items-center justify-between">
+                                <div className="text-[10px] text-gray-500 uppercase">Total (1–7)</div>
+                                <div className="text-sm font-bold text-white font-mono">{total.toFixed(2)} MPH</div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </Card>
+        </div>
+    );
+};
+
 export const AdminView = ({ navigate }) => {
     const { state, setState, addNotification, updateBot } = useContext(AppContext);
     const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'users', 'bots', 'settings'
@@ -287,6 +359,7 @@ export const AdminView = ({ navigate }) => {
     const [botRecharge, setBotRecharge] = useState(null); // Bot sendo recarregado
     const [viewFinancials, setViewFinancials] = useState(null); // Visualizar detalhes financeiros
     const [viewNetwork, setViewNetwork] = useState(null); // Visualizar rede do usuário
+    const [viewPvpVolume, setViewPvpVolume] = useState(null);
 
     const normalizeUsername = (value) => {
         const raw = String(value || '');
@@ -939,6 +1012,9 @@ export const AdminView = ({ navigate }) => {
                             <Button size="xs" className="flex-1 bg-purple-900/50 text-purple-400 hover:bg-purple-900" onClick={() => setViewNetwork(user)}>
                                 <Network size={12} className="mr-1" /> Rede
                             </Button>
+                            <Button size="xs" className="flex-1 bg-pink-900/30 text-pink-400 hover:bg-pink-900/40" onClick={() => setViewPvpVolume(user)}>
+                                <TrendingUp size={12} className="mr-1" /> PvP Vol
+                            </Button>
                         </div>
                     </Card>
                 ))}
@@ -950,6 +1026,14 @@ export const AdminView = ({ navigate }) => {
                     userId={viewNetwork.id} 
                     username={viewNetwork.username} 
                     onClose={() => setViewNetwork(null)} 
+                />
+            )}
+
+            {viewPvpVolume && (
+                <PvpVolumeViewer
+                    userId={viewPvpVolume.id}
+                    username={viewPvpVolume.username}
+                    onClose={() => setViewPvpVolume(null)}
                 />
             )}
 

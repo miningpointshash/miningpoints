@@ -134,7 +134,7 @@ export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, is
 
                 <div className="text-center">
                     <h2 className="text-2xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">
-                        {betAmount * 2 * 0.9} MPH
+                        {betAmount * 2 * 0.85} MPH
                     </h2>
                     <p className="text-[10px] text-gray-500">PRÊMIO ESTIMADO</p>
                 </div>
@@ -216,7 +216,7 @@ export const TwelveDoorsGame = ({ onGameOver, betAmount, playerChar, botChar, is
                             VOCÊ GANHOU!
                         </h1>
                         <p className="text-2xl text-yellow-400 font-mono mt-4">
-                            +{ (betAmount * 2 * 0.9).toFixed(2) } MPH
+                            +{ (betAmount * 2 * 0.85).toFixed(2) } MPH
                         </p>
                     </div>
                 </div>

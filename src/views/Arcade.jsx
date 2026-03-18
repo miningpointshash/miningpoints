@@ -29,7 +29,39 @@ export const ArcadeView = () => {
     const [isJoiningRoom, setIsJoiningRoom] = useState(false);
     const [showCreditModal, setShowCreditModal] = useState(false);
     const [isMuted, setIsMuted] = useState(false); // Estado de Mute
+    const [isSettling, setIsSettling] = useState(false);
+    const [pvpHistory, setPvpHistory] = useState([]);
     const { state, setState, addNotification, addGameResult, processPvpDistribution, consumeDailyCredit, buyCredits, t, getNextBotDifficulty } = useContext(AppContext);
+
+    const getPvpTimeoutKey = () => {
+        const uid = state?.user?.id || 'anon';
+        return `mining_points_pvp_timeout_${uid}`;
+    };
+
+    const readPvpTimeoutMeta = () => {
+        try {
+            const raw = localStorage.getItem(getPvpTimeoutKey());
+            if (!raw) return { streak: 0, lastAt: 0 };
+            const parsed = JSON.parse(raw);
+            const streak = Number(parsed?.streak || 0);
+            const lastAt = Number(parsed?.lastAt || 0);
+            const now = Date.now();
+            if (!Number.isFinite(lastAt) || now - lastAt > 30 * 60 * 1000) return { streak: 0, lastAt: 0 };
+            return { streak: Math.max(0, Math.min(5, streak)), lastAt };
+        } catch {
+            return { streak: 0, lastAt: 0 };
+        }
+    };
+
+    const writePvpTimeoutMeta = (streak) => {
+        try {
+            localStorage.setItem(getPvpTimeoutKey(), JSON.stringify({ streak, lastAt: Date.now() }));
+        } catch {}
+    };
+
+    const clearPvpTimeoutMeta = () => {
+        try { localStorage.removeItem(getPvpTimeoutKey()); } catch {}
+    };
     
     // Verificação de segurança do estado
     if (!state || !state.user || !state.wallet) {
@@ -84,8 +116,9 @@ export const ArcadeView = () => {
         setGame(null);
     };
 
-    const handlePlayRequest = (gameType) => {
-        if (consumeDailyCredit()) {
+    const handlePlayRequest = async (gameType) => {
+        const ok = await consumeDailyCredit();
+        if (ok) {
             setGame(gameType);
         } else {
             setShowCreditModal(true);
@@ -158,6 +191,24 @@ export const ArcadeView = () => {
         }
     }, []);
 
+    useEffect(() => {
+        const userId = state.user.id;
+        if (!userId) return;
+
+        const fetchHistory = async () => {
+            const { data } = await supabase
+                .from('arcade_matches')
+                .select('id, created_at, game_type, bet_amount_mph, winner_id, player1_id, player2_id, prize_distributed_mph')
+                .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+                .order('created_at', { ascending: false })
+                .limit(30);
+
+            if (Array.isArray(data)) setPvpHistory(data);
+        };
+
+        fetchHistory();
+    }, [state.user.id, pvpState]);
+
     const clearRoomFromUrl = () => {
         const url = new URL(window.location.href);
         url.searchParams.delete('room');
@@ -170,10 +221,21 @@ export const ArcadeView = () => {
 
         setIsJoiningRoom(true);
         try {
-            const { data, error } = await supabase.rpc('join_pvp_room', {
-                p_room_id: pendingRoomId,
-                p_password: joinPassword || '',
-                p_opponent_avatar: pvpConfig.char
+            const { data: { session } } = await supabase.auth.getSession();
+            const accessToken = session?.access_token;
+            if (!accessToken) throw new Error('Sessão expirada. Faça login novamente.');
+
+            const { data, error } = await supabase.functions.invoke('pvp-room-join', {
+                body: {
+                    room_id: pendingRoomId,
+                    password: joinPassword || '',
+                    opponent_avatar: pvpConfig.char
+                },
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'x-user-jwt': accessToken,
+                    apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
+                }
             });
 
             if (error) throw error;
@@ -204,7 +266,12 @@ export const ArcadeView = () => {
             addNotification('Você entrou na sala privada.', 'success');
         } catch (err) {
             console.error('Erro ao entrar na sala:', err);
-            addNotification(err?.message || 'Erro ao entrar na sala.', 'danger');
+            const msg =
+                err?.context?.body?.error ||
+                err?.context?.body?.message ||
+                err?.message ||
+                'Erro ao entrar na sala.';
+            addNotification(String(msg), 'danger');
         } finally {
             setIsJoiningRoom(false);
         }
@@ -221,12 +288,23 @@ export const ArcadeView = () => {
         if (pvpConfig.isPrivate) {
             setIsSearching(true);
             try {
-                const { data, error } = await supabase.rpc('create_pvp_room', {
-                    p_game_type: pvpConfig.gameType,
-                    p_bet_amount_mph: pvpConfig.bet,
-                    p_creator_avatar: pvpConfig.char,
-                    p_is_private: true,
-                    p_password: pvpConfig.roomPassword || ''
+                const { data: { session } } = await supabase.auth.getSession();
+                const accessToken = session?.access_token;
+                if (!accessToken) throw new Error('Sessão expirada. Faça login novamente.');
+
+                const { data, error } = await supabase.functions.invoke('pvp-room-create', {
+                    body: {
+                        game_type: pvpConfig.gameType,
+                        bet_amount_mph: pvpConfig.bet,
+                        creator_avatar: pvpConfig.char,
+                        is_private: true,
+                        password: pvpConfig.roomPassword || ''
+                    },
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        'x-user-jwt': accessToken,
+                        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY
+                    }
                 });
 
                 if (error) throw error;
@@ -244,7 +322,12 @@ export const ArcadeView = () => {
                 addNotification('Sala privada criada. Compartilhe o link com a senha.', 'success');
             } catch (err) {
                 console.error('Erro ao criar sala privada:', err);
-                addNotification(err?.message || 'Erro ao criar sala privada.', 'danger');
+                const msg =
+                    err?.context?.body?.error ||
+                    err?.context?.body?.message ||
+                    err?.message ||
+                    'Erro ao criar sala privada.';
+                addNotification(String(msg), 'danger');
                 stopBgm();
             } finally {
                 setIsSearching(false);
@@ -252,12 +335,6 @@ export const ArcadeView = () => {
             return;
         }
 
-        // Debita aposta antecipadamente
-        setState(prev => ({
-            ...prev,
-            wallet: { ...prev.wallet, mph: prev.wallet.mph - pvpConfig.bet }
-        }));
-        
         // Adiciona ao Book (Simulação)
         const myGameId = `g_${Date.now()}`;
         const newGame = { 
@@ -301,12 +378,7 @@ export const ArcadeView = () => {
             if (pvpConfig.gameId) {
                 setOpenGames(prev => prev.filter(g => g.id !== pvpConfig.gameId));
             }
-
-            // Reembolsa aposta
-            setState(prev => ({
-                ...prev,
-                wallet: { ...prev.wallet, mph: prev.wallet.mph + pvpConfig.bet }
-            }));
+            clearPvpTimeoutMeta();
             setPvpState('lobby');
         }
     };
@@ -324,17 +396,27 @@ export const ArcadeView = () => {
                     if (pvpConfig.gameId) {
                         setOpenGames(prev => prev.filter(g => g.id !== pvpConfig.gameId));
                     }
+                    clearPvpTimeoutMeta();
                     setPvpState('playing');
                 }
             }, 1000);
         } else if (pvpState === 'waiting_room' && !pvpConfig.isPrivate && waitingTimer === 0) {
             // Timeout - Ninguém entrou
-            addNotification(t('arcade.noHumanFound'), 'info');
-            // Remove do book ao iniciar contra bot
             if (pvpConfig.gameId) {
                 setOpenGames(prev => prev.filter(g => g.id !== pvpConfig.gameId));
             }
-            setPvpState('playing');
+            const meta = readPvpTimeoutMeta();
+            const shouldCloseThisTime = meta.streak <= 0 && Math.random() < 0.5;
+
+            if (shouldCloseThisTime) {
+                writePvpTimeoutMeta(1);
+                addNotification(t('arcade.noHumanFound'), 'info');
+                setPvpState('lobby');
+            } else {
+                clearPvpTimeoutMeta();
+                addNotification(t('arcade.autoStart'), 'info');
+                setPvpState('playing');
+            }
         }
         return () => clearInterval(interval);
     }, [pvpState, waitingTimer, pvpConfig.isPrivate]);
@@ -458,12 +540,6 @@ export const ArcadeView = () => {
             opponentAvatar: game?.avatar,
             botId: game?.botId
         }));
-        
-        // Debita aposta
-        setState(prev => ({
-            ...prev,
-            wallet: { ...prev.wallet, mph: prev.wallet.mph - betAmount }
-        }));
 
         addNotification(t('arcade.challengeAccepted'), 'success');
         setTimeout(() => setPvpState('playing'), 1000);
@@ -513,42 +589,39 @@ export const ArcadeView = () => {
         // Se Empate: Devolve Aposta * 0.85 (Taxa da casa)
         // Se Perde: 0
 
-        let outcome = 'loss';
-        let prize = 0;
+        if (isSettling) return;
+        setIsSettling(true);
+        try {
+            const { data, error } = await supabase.rpc('pvp_bot_match_settle', {
+                p_game_type: pvpConfig.gameType,
+                p_bet_amount_mph: pvpConfig.bet,
+                p_player_score: Number(finalScore.player || 0),
+                p_bot_score: Number(finalScore.bot || 0),
+                p_player_avatar: pvpConfig.char
+            });
 
-        if (finalScore.player > finalScore.bot) {
-            outcome = 'win';
-            prize = pvpConfig.bet * 2 * 0.85;
-        } else if (finalScore.player === finalScore.bot) {
-            outcome = 'draw';
-            prize = pvpConfig.bet * 0.85; // Devolve com taxa
+            if (error) throw error;
+            if (!data?.ok) throw new Error(data?.error || 'Falha ao processar resultado.');
+
+            const outcome = data.outcome || 'loss';
+            const prize = Number(data.prize_mph || 0);
+
+            playResultSound(outcome);
+
+            setState(prev => ({
+                ...prev,
+                wallet: { ...prev.wallet, mph: Number(data.balance_mph || prev.wallet.mph || 0) }
+            }));
+
+            setPvpResult({ outcome, prize, score: finalScore });
+            setPvpState('result');
+        } catch (err) {
+            console.error('Erro ao processar PvP bot:', err);
+            addNotification(err?.message || 'Erro ao processar resultado.', 'danger');
+            setPvpState('lobby');
+        } finally {
+            setIsSettling(false);
         }
-
-        playResultSound(outcome); // Play result sound (already blessed)
-
-        if (prize > 0) {
-            // Vitória ou Empate:
-            // Histórico: Lucro (Prêmio - Aposta)
-            // Carteira: Recebe o Prêmio (já que a aposta foi descontada no início)
-            const profit = prize - pvpConfig.bet;
-            addGameResult('PvP Arena', profit, prize); 
-            addNotification(`PvP Arena: ${outcome === 'win' ? t('arcade.victory') : t('arcade.draw')} (+${profit.toFixed(2)} MPH)`, 'success');
-            
-            // Processa a distribuição das taxas (10% de cada lado = 20% do total apostado)
-            processPvpDistribution(pvpConfig.bet);
-        } else {
-            // Derrota:
-            // Histórico: Prejuízo (-Aposta)
-            // Carteira: 0 (não desconta novamente, pois já foi descontado no início)
-            addGameResult('PvP Arena', -pvpConfig.bet, 0);
-            addNotification(`PvP Arena: ${t('arcade.defeat')} (-${pvpConfig.bet.toFixed(2)} MPH)`, 'danger');
-            
-            // Mesmo na derrota, a taxa foi cobrada (está retida com a casa), então distribuímos
-            processPvpDistribution(pvpConfig.bet);
-        }
-
-        setPvpResult({ outcome, prize, score: finalScore });
-        setPvpState('result');
     };
 
     const handleShareLink = () => {
@@ -650,7 +723,7 @@ export const ArcadeView = () => {
 
                     <div className="text-center mb-6 flex justify-center gap-3">
                         <div className="inline-block bg-gray-800 px-3 py-1 rounded-full text-xs border border-green-500 text-green-400">
-                            {t('arcade.dailyCreditsLabel')} {state.user.dailyCredits}/3
+                            {t('arcade.dailyCreditsLabel')} {Number(state.user.dailyCreditsFreeRemaining ?? state.user.dailyCredits ?? 0)}/3{Number(state.user.dailyCreditsBonusRemaining || 0) > 0 ? ` (+${Number(state.user.dailyCreditsBonusRemaining || 0)})` : ''}
                         </div>
                         <div className="inline-block bg-gray-800 px-3 py-1 rounded-full text-xs border border-purple-500 text-purple-400 font-mono">
                             {state.wallet.mph.toFixed(2)} MPH
@@ -852,8 +925,9 @@ export const ArcadeView = () => {
                         <h3 className="text-xl font-bold text-white mb-2">{t('arcade.noCreditsTitle')}</h3>
                         <p className="text-gray-400 text-sm mb-6">{t('arcade.noCreditsText')}</p>
                         <div className="space-y-3">
-                            <Button onClick={() => { 
-                                if(buyCredits(5, 50)) setShowCreditModal(false); // 5 créditos por 50 MPH
+                            <Button onClick={async () => { 
+                                const ok = await buyCredits(5, 50);
+                                if (ok) setShowCreditModal(false);
                             }} variant="success" className="w-full text-xs">
                                 {t('arcade.buyCredits')}
                             </Button>
@@ -871,20 +945,25 @@ export const ArcadeView = () => {
                     <History size={16} className="text-gray-400"/> {t('arcade.historyTitle')}
                 </h3>
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                    {state.gameHistory && state.gameHistory.filter(entry => entry.game === 'PvP Arena').length > 0 ? (
-                        state.gameHistory
-                            .filter(entry => entry.game === 'PvP Arena') // Filtra apenas jogos PvP Arena
-                            .map((entry) => (
-                            <div key={entry.id} className="bg-gray-900 p-3 rounded flex justify-between items-center text-xs border-l-2 border-purple-500">
-                                <div>
-                                    <p className="font-bold text-white">{entry.game}</p>
-                                    <p className="text-[10px] text-gray-500">{new Date(entry.time).toLocaleString()}</p>
+                    {Array.isArray(pvpHistory) && pvpHistory.length > 0 ? (
+                        pvpHistory.map((m) => {
+                            const bet = Number(m.bet_amount_mph || 0);
+                            const prize = Number(m.prize_distributed_mph || 0);
+                            const isWin = m.winner_id && m.winner_id === state.user.id;
+                            const isDraw = !m.winner_id && prize > 0;
+                            const profit = isWin || isDraw ? (prize - bet) : -bet;
+                            return (
+                                <div key={m.id} className="bg-gray-900 p-3 rounded flex justify-between items-center text-xs border-l-2 border-purple-500">
+                                    <div>
+                                        <p className="font-bold text-white">PvP Arena</p>
+                                        <p className="text-[10px] text-gray-500">{new Date(m.created_at).toLocaleString()}</p>
+                                    </div>
+                                    <span className={`font-bold font-mono ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {profit >= 0 ? '+' : ''}{profit.toFixed(2)} MPH
+                                    </span>
                                 </div>
-                                <span className={`font-bold font-mono ${entry.amount >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                    {entry.amount >= 0 ? '+' : ''}{entry.amount.toFixed(2)} MPH
-                                </span>
-                            </div>
-                        ))
+                            );
+                        })
                     ) : (
                         <p className="text-gray-600 text-xs text-center py-4 bg-gray-900/50 rounded border border-gray-800 border-dashed">
                             {t('arcade.historyEmpty')}
@@ -903,18 +982,12 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
     const [lobbyStats, setLobbyStats] = useState({ totalPaid: 0, onlineUsers: 0 });
 
     useEffect(() => {
-        // Carregar estatísticas reais do Supabase
         const fetchLobbyStats = async () => {
-            // Total Pago (Soma de prêmios distribuídos)
-            const { data: prizes } = await supabase.from('arcade_matches').select('prize_distributed_mph');
-            const total = prizes?.reduce((acc, curr) => acc + (curr.prize_distributed_mph || 0), 0) || 0;
-
-            // Usuários Online (Aproximação: contagem de perfis ativos ou sessões recentes)
-            // Como não temos tabela de sessões, vamos contar total de usuários cadastrados como "comunidade"
+            const { data: totalPaid } = await supabase.rpc('get_arcade_total_paid');
             const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
 
             setLobbyStats({
-                totalPaid: total,
+                totalPaid: Number(totalPaid || 0),
                 onlineUsers: count || 0
             });
         };

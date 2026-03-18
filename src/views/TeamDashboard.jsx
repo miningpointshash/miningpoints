@@ -3,7 +3,7 @@ import { AppContext } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import { 
     Users, DollarSign, TrendingUp, Trophy, ChevronDown, ChevronUp, 
-    Activity, ArrowLeft, Loader, User
+    Activity, ArrowLeft, Loader, User, X
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 
@@ -21,10 +21,34 @@ export const TeamDashboard = ({ onBack }) => {
     });
     const [expandedLevel, setExpandedLevel] = useState(1);
     const [statusFilter, setStatusFilter] = useState('all');
+    const [pvpVolumeTarget, setPvpVolumeTarget] = useState(null);
+    const [pvpVolumeRows, setPvpVolumeRows] = useState([]);
+    const [pvpVolumeLoading, setPvpVolumeLoading] = useState(false);
 
     useEffect(() => {
         fetchTeamData();
     }, []);
+
+    useEffect(() => {
+        const fetchPvpVolume = async () => {
+            if (!pvpVolumeTarget?.user_id) return;
+            setPvpVolumeLoading(true);
+            try {
+                const { data, error } = await supabase.rpc('get_pvp_downline_volume_by_level', {
+                    p_root_user_id: pvpVolumeTarget.user_id,
+                    p_max_level: 7
+                });
+                if (error) throw error;
+                setPvpVolumeRows(Array.isArray(data) ? data : []);
+            } catch (e) {
+                console.error('Erro ao buscar volume PVP:', e);
+                setPvpVolumeRows([]);
+            } finally {
+                setPvpVolumeLoading(false);
+            }
+        };
+        fetchPvpVolume();
+    }, [pvpVolumeTarget?.user_id]);
 
     const fetchTeamData = async () => {
         try {
@@ -110,6 +134,55 @@ export const TeamDashboard = ({ onBack }) => {
 
     return (
         <div className="animate-fadeIn pb-24 px-4">
+            {pvpVolumeTarget && (
+                <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+                    <Card className="w-full max-w-md bg-gray-900 border-gray-700 p-0 overflow-hidden">
+                        <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-white font-bold text-base">Volume PvP (7 gerações)</h3>
+                                <p className="text-xs text-gray-400">{pvpVolumeTarget.username}</p>
+                            </div>
+                            <button
+                                onClick={() => { setPvpVolumeTarget(null); setPvpVolumeRows([]); }}
+                                className="text-gray-400 hover:text-white transition"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="p-4">
+                            {pvpVolumeLoading ? (
+                                <div className="text-center text-gray-400 text-sm py-6">Carregando...</div>
+                            ) : (
+                                <>
+                                    <div className="space-y-2">
+                                        {[1, 2, 3, 4, 5, 6, 7].map((lvl) => {
+                                            const row = (pvpVolumeRows || []).find((r) => Number(r.level) === lvl);
+                                            const members = Number(row?.members || 0);
+                                            const vol = Number(row?.volume_mph || 0);
+                                            return (
+                                                <div key={lvl} className="bg-black/40 border border-gray-800 rounded-lg p-3 flex items-center justify-between">
+                                                    <div className="text-xs text-gray-300 font-bold">Nível {lvl}</div>
+                                                    <div className="text-right">
+                                                        <div className="text-[10px] text-gray-500">{members} membros</div>
+                                                        <div className="text-xs font-mono font-bold text-pink-400">{vol.toFixed(2)} MPH</div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="mt-4 bg-gray-800/30 border border-gray-700 rounded-lg p-3 flex items-center justify-between">
+                                        <div className="text-[10px] text-gray-500 uppercase">Total (1–7)</div>
+                                        <div className="text-sm font-bold text-white font-mono">
+                                            {(pvpVolumeRows || []).reduce((acc, r) => acc + Number(r?.volume_mph || 0), 0).toFixed(2)} MPH
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </Card>
+                </div>
+            )}
+
             {/* Header */}
             <div className="flex items-center gap-3 mb-6 mt-4">
                 <button 
@@ -281,6 +354,12 @@ export const TeamDashboard = ({ onBack }) => {
                                                         <div className="text-[10px] text-gray-400">
                                                             Vol: ${user.personal_volume || 0}
                                                         </div>
+                                                        <button
+                                                            onClick={() => setPvpVolumeTarget({ user_id: user.user_id, username: user.username })}
+                                                            className="mt-1 text-[10px] text-pink-400 hover:text-pink-300 transition underline"
+                                                        >
+                                                            Ver PvP 7G
+                                                        </button>
                                                     </div>
                                                 </div>
                                             ))}

@@ -9,8 +9,10 @@ export const CyberRunnerGame = ({ onGameOver, onExit }) => {
     const [score, setScore] = useState(0);
     const [gameState, setGameState] = useState('start'); // start, playing, gameover
     const [audioEnabled, setAudioEnabled] = useState(true);
+    const [difficultyLevel, setDifficultyLevel] = useState(1);
     const requestRef = useRef();
     const playerRef = useRef(null); // Ref para o elemento DOM do jogador (GIF)
+    const timeLeftRef = useRef(120);
     
     // Game Physics & State Refs (to avoid closure staleness)
     const gameData = useRef({
@@ -25,6 +27,15 @@ export const CyberRunnerGame = ({ onGameOver, onExit }) => {
         score: 0,
         active: false
     });
+
+    useEffect(() => {
+        timeLeftRef.current = timeLeft;
+        const elapsed = 120 - timeLeft;
+        let lvl = 1 + Math.floor(elapsed / 15);
+        if (timeLeft <= 30) lvl += 2;
+        lvl = Math.max(1, Math.min(10, lvl));
+        setDifficultyLevel(lvl);
+    }, [timeLeft]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -65,10 +76,17 @@ export const CyberRunnerGame = ({ onGameOver, onExit }) => {
         // Clear
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Aceleração Dinâmica baseada no tempo
-        // 120s = 5 speed, 0s = 9 speed
-        const difficulty = (120 - timeLeft) / 120; // 0 a 1
-        state.speed = 5 + (difficulty * 4); 
+        const tl = timeLeftRef.current;
+        const elapsed = 120 - tl;
+        const mainProgress = Math.max(0, Math.min(1, elapsed / 90));
+        const endgameProgress = tl <= 30 ? Math.max(0, Math.min(1, (30 - tl) / 30)) : 0;
+
+        let lvl = 1 + Math.floor(elapsed / 15);
+        if (tl <= 30) lvl += 2;
+        lvl = Math.max(1, Math.min(10, lvl));
+
+        const difficultyFactor = 1 + mainProgress * 0.55 + endgameProgress * 0.9;
+        state.speed = (5 + (lvl - 1) * 0.55) * (1 + endgameProgress * 0.1) * (0.95 + difficultyFactor * 0.05);
 
         // Draw Background (Cyber Grid Effect)
         ctx.fillStyle = '#050505';
@@ -109,7 +127,7 @@ export const CyberRunnerGame = ({ onGameOver, onExit }) => {
         
         // Spawn Obstacles (Increase frequency slightly)
         // 90 frames at start, down to 60 frames near end
-        const obstacleFreq = Math.floor(90 - (difficulty * 30));
+        const obstacleFreq = Math.max(32, Math.floor(95 - (lvl - 1) * 6 - endgameProgress * 12));
         
         if (state.frameCount % obstacleFreq === 0) {
             state.obstacles.push({
@@ -122,7 +140,8 @@ export const CyberRunnerGame = ({ onGameOver, onExit }) => {
         }
 
         // Spawn Coins/Traps (Separate Timer)
-        if (state.frameCount % 50 === 0) {
+        const pickupFreq = Math.max(26, Math.floor(58 - (lvl - 1) * 3 - endgameProgress * 14));
+        if (state.frameCount % pickupFreq === 0) {
             // Check Collision with last spawned obstacle to ensure we don't spawn INSIDE it
             const lastObs = state.obstacles[state.obstacles.length - 1];
             const safeZone = 60; // minimum pixel distance from an obstacle center
@@ -133,8 +152,7 @@ export const CyberRunnerGame = ({ onGameOver, onExit }) => {
             }
 
             if (canSpawn) {
-                // Trap Chance increases as time runs out (5% -> 25%)
-                const trapChance = 0.05 + (difficulty * 0.20);
+                const trapChance = Math.min(0.6, 0.05 + (mainProgress * 0.25) + (endgameProgress * 0.25));
                 
                 if (Math.random() < trapChance) {
                     state.traps.push({
@@ -281,6 +299,7 @@ export const CyberRunnerGame = ({ onGameOver, onExit }) => {
         if (audioEnabled) SoundManager.startMusic();
         
         setGameState('playing');
+        setDifficultyLevel(1);
         gameData.current = {
             player: { x: 50, y: 0, w: 60, h: 60, dy: 0, grounded: false, color: '#39ff14' },
             obstacles: [],
@@ -295,6 +314,7 @@ export const CyberRunnerGame = ({ onGameOver, onExit }) => {
         };
         setScore(0);
         setTimeLeft(120);
+        timeLeftRef.current = 120;
         requestRef.current = requestAnimationFrame(animate);
     };
 
@@ -348,8 +368,15 @@ export const CyberRunnerGame = ({ onGameOver, onExit }) => {
                 
                 {/* HUD */}
                 <div className="absolute top-4 left-4 right-4 flex justify-between z-10 pointer-events-none">
-                    <div className="bg-black/50 px-4 py-2 rounded-full border border-green-500 text-green-400 font-mono font-bold flex items-center gap-2">
-                        <Clock size={16}/> {timeLeft}s
+                    <div className="flex gap-2">
+                        <div className="bg-black/50 px-4 py-2 rounded-full border border-green-500 text-green-400 font-mono font-bold flex items-center gap-2">
+                            <Clock size={16}/> {timeLeft}s
+                        </div>
+                        <div className={`bg-black/50 px-4 py-2 rounded-full border font-mono font-bold flex items-center gap-2 ${
+                            timeLeft <= 30 ? 'border-pink-500 text-pink-400' : 'border-purple-500 text-purple-400'
+                        }`}>
+                            LV {difficultyLevel}
+                        </div>
                     </div>
                     <div className="flex gap-2">
                         <button onClick={toggleAudio} className="pointer-events-auto bg-black/50 p-2 rounded-full border border-purple-500 text-purple-400">

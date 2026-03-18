@@ -14,7 +14,10 @@ const INITIAL_STATE = {
     joinedAt: new Date().toISOString(),
     team: 0,
     language: "pt-BR", // Default
-    dailyCredits: 3, // Créditos diários
+    dailyCredits: 3,
+    dailyCreditsFreeRemaining: 3,
+    dailyCreditsBonusRemaining: 0,
+    dailyCreditsNextResetAt: null,
     financialPassword: "", 
     wallets: { 
         usdt_bep20: "",
@@ -135,7 +138,7 @@ export const AppProvider = ({ children }) => {
             }
 
             // Busca perfil, carteira e planos em paralelo
-            let [profileRes, walletRes, plansRes, txRes, roiRes, teamEarnRes] = await Promise.all([
+            let [profileRes, walletRes, plansRes, txRes, roiRes, teamEarnRes, creditsRes] = await Promise.all([
                 supabase.from('profiles').select('*').eq('id', userId).single(),
                 supabase.from('wallets').select('*').eq('user_id', userId).single(),
                 supabase.from('plans').select('*').eq('user_id', userId),
@@ -153,7 +156,8 @@ export const AppProvider = ({ children }) => {
                     .eq('status', 'completed')
                     .order('created_at', { ascending: false })
                     .limit(50),
-                supabase.rpc('get_network_earnings_summary', { target_user_id: userId })
+                supabase.rpc('get_network_earnings_summary', { target_user_id: userId }),
+                supabase.rpc('get_arcade_credits_state')
             ]);
 
             let profile = profileRes.data;
@@ -267,6 +271,18 @@ export const AppProvider = ({ children }) => {
                         role: profile.role || 'user',
                         account_status: profile.account_status, // Importante para controle
                         automatic_withdrawal: profile.automatic_withdrawal || false,
+                        dailyCredits: creditsRes?.data?.ok
+                            ? Number(creditsRes.data.total_remaining || 0)
+                            : Number(prev.user.dailyCredits || 3),
+                        dailyCreditsFreeRemaining: creditsRes?.data?.ok
+                            ? Number(creditsRes.data.free_remaining || 0)
+                            : Number(prev.user.dailyCreditsFreeRemaining ?? prev.user.dailyCredits ?? 3),
+                        dailyCreditsBonusRemaining: creditsRes?.data?.ok
+                            ? Number(creditsRes.data.bonus_remaining || 0)
+                            : Number(prev.user.dailyCreditsBonusRemaining || 0),
+                        dailyCreditsNextResetAt: creditsRes?.data?.ok
+                            ? (creditsRes.data.next_reset_at || null)
+                            : (prev.user.dailyCreditsNextResetAt || null),
                         wallets: {
                             ...(prev.user.wallets || {}),
                             usdt_bep20: profile.wallet_usdt_bep20 || '',
@@ -472,31 +488,95 @@ export const AppProvider = ({ children }) => {
     }));
   };
 
-  const consumeDailyCredit = () => {
-      if (state.user.dailyCredits > 0) {
+  const syncArcadeCredits = async () => {
+      try {
+          const { data, error } = await supabase.rpc('get_arcade_credits_state');
+          if (error) throw error;
+          if (!data?.ok) return;
+
+          const free = Number(data.free_remaining || 0);
+          const bonus = Number(data.bonus_remaining || 0);
+          const total = Number(data.total_remaining || (free + bonus));
+
           setState(prev => ({
               ...prev,
               user: {
                   ...prev.user,
-                  dailyCredits: prev.user.dailyCredits - 1
+                  dailyCredits: total,
+                  dailyCreditsFreeRemaining: free,
+                  dailyCreditsBonusRemaining: bonus,
+                  dailyCreditsNextResetAt: data.next_reset_at || null
+              }
+          }));
+      } catch (e) {
+          console.error('Erro ao sincronizar créditos do Arcade:', e);
+      }
+  };
+
+  const consumeDailyCredit = async () => {
+      try {
+          const { data, error } = await supabase.rpc('consume_arcade_credit');
+          if (error) throw error;
+          if (!data?.ok) return false;
+
+          const free = Number(data.free_remaining || 0);
+          const bonus = Number(data.bonus_remaining || 0);
+          const total = Number(data.total_remaining || (free + bonus));
+
+          setState(prev => ({
+              ...prev,
+              user: {
+                  ...prev.user,
+                  dailyCredits: total,
+                  dailyCreditsFreeRemaining: free,
+                  dailyCreditsBonusRemaining: bonus,
+                  dailyCreditsNextResetAt: data.next_reset_at || prev.user.dailyCreditsNextResetAt || null
               }
           }));
           return true;
+      } catch (e) {
+          console.error('Erro ao consumir crédito do Arcade:', e);
+          return false;
       }
-      return false;
   };
 
-  const buyCredits = (amount, cost) => {
-      if (state.wallet.mph >= cost) {
+  const buyCredits = async (amount, cost) => {
+      try {
+          const { data, error } = await supabase.rpc('buy_arcade_credits', {
+              p_amount: amount,
+              p_cost_mph: cost
+          });
+          if (error) throw error;
+          if (!data?.ok) {
+              addNotification(data?.error || 'MPH insuficiente para comprar créditos.', 'danger');
+              return false;
+          }
+
+          const free = Number(data.free_remaining || 0);
+          const bonus = Number(data.bonus_remaining || 0);
+          const total = Number(data.total_remaining || (free + bonus));
+          const walletBalance = Number(data.wallet_balance_mph || 0);
+
           setState(prev => ({
               ...prev,
-              user: { ...prev.user, dailyCredits: prev.user.dailyCredits + amount },
-              wallet: { ...prev.wallet, mph: prev.wallet.mph - cost }
+              user: {
+                  ...prev.user,
+                  dailyCredits: total,
+                  dailyCreditsFreeRemaining: free,
+                  dailyCreditsBonusRemaining: bonus,
+                  dailyCreditsNextResetAt: data.next_reset_at || prev.user.dailyCreditsNextResetAt || null
+              },
+              wallet: {
+                  ...prev.wallet,
+                  mph: walletBalance
+              }
           }));
-          addNotification(`${amount} Créditos comprados com sucesso!`, 'success');
+
+          addNotification(`${amount} créditos comprados com sucesso!`, 'success');
           return true;
-      } else {
-          addNotification('MPH insuficiente para comprar créditos.', 'danger');
+      } catch (e) {
+          console.error('Erro ao comprar créditos do Arcade:', e);
+          addNotification('Erro ao comprar créditos.', 'danger');
           return false;
       }
   };
