@@ -145,31 +145,51 @@ export const ArcadeView = () => {
 
     // --- LÓGICA PVP ---
 
-    // Gera lista de jogos baseada nos Bots
     const [openGames, setOpenGames] = useState([]);
+    const [botGames, setBotGames] = useState([]);
+    const botAliasIndexRef = React.useRef({});
 
-    // Atualiza openGames periodicamente com bots
     useEffect(() => {
-        // Inicializa com alguns bots ativos aleatórios
-        // Verificação defensiva: state.bots pode ser undefined em alguns ciclos de HMR ou estado antigo
-        const availableBots = (state.bots || []).filter(b => b.active);
-        if (availableBots.length === 0) return;
+        if (tab !== 'pvp') return;
+        if (pvpState !== 'lobby') return;
 
-        // Seleciona 3 bots aleatórios para "criar salas"
-        const shuffled = [...availableBots].sort(() => 0.5 - Math.random());
-        const selectedBots = shuffled.slice(0, 3);
+        const buildBotGames = () => {
+            const availableBots = (state.bots || []).filter(b => b.active);
+            if (availableBots.length === 0) {
+                setBotGames([]);
+                return;
+            }
 
-        const botGames = selectedBots.map(bot => ({
-            id: `bot_game_${bot.id}_${Date.now()}`,
-            player: bot.name,
-            bet: [100, 500, 1000][Math.floor(Math.random() * 3)],
-            avatar: bot.avatar,
-            isBot: true,
-            botId: bot.id
-        }));
+            const shuffled = [...availableBots].sort(() => 0.5 - Math.random());
+            const selectedBots = shuffled.slice(0, 3);
 
-        setOpenGames(botGames);
-    }, [state.bots]); // Recarrega se bots mudarem (ex: admin panel)
+            const games = selectedBots.map((bot) => {
+                const nicknames = Array.isArray(bot.nicknames) && bot.nicknames.length > 0 ? bot.nicknames : [bot.name];
+                const currentIdx = Number(botAliasIndexRef.current[bot.id] || 0);
+                const playerName = nicknames[currentIdx % nicknames.length] || bot.name;
+                botAliasIndexRef.current[bot.id] = currentIdx + 1;
+
+                return {
+                    id: `bot_game_${bot.id}_${Date.now()}`,
+                    player: playerName,
+                    bet: [100, 500, 1000][Math.floor(Math.random() * 3)],
+                    avatar: bot.avatar,
+                    isBot: true,
+                    botId: bot.id
+                };
+            });
+
+            setBotGames(games);
+        };
+
+        buildBotGames();
+        const interval = setInterval(buildBotGames, 20000);
+        return () => clearInterval(interval);
+    }, [state.bots, tab, pvpState]);
+
+    const combinedOpenGames = React.useMemo(() => {
+        return [...openGames, ...botGames];
+    }, [openGames, botGames]);
 
     const buildRoomLink = (roomId) => {
         const url = new URL(window.location.href);
@@ -530,7 +550,7 @@ export const ArcadeView = () => {
         startBgm(); // Start BGM on user interaction
 
         // Encontra o jogo para pegar dados do bot (se for bot)
-        const game = openGames.find(g => g.id === gameId);
+        const game = combinedOpenGames.find(g => g.id === gameId);
 
         // Configura para jogar contra esse "oponente"
         setPvpConfig(prev => ({ 
@@ -805,7 +825,7 @@ export const ArcadeView = () => {
                             onJoin={handleJoinGame}
                             userBalance={state.wallet?.mph || 0}
                             isSearching={isSearching}
-                            openGames={openGames}
+                            openGames={combinedOpenGames}
                             isMuted={isMuted}
                             toggleMute={toggleMute}
                             t={t}

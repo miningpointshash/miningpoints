@@ -6,6 +6,34 @@ export const AppContext = createContext();
 
 const MINING_META_KEY = 'mining_points_mvp_v1_mining_meta';
 
+const BOT_CATALOG = [
+  { id: 'bot_01', name: 'CyberNinja', avatar: 'mp_p2', mph: 5000, active: true, nicknames: ['CyberNinja', 'NeonNinja', 'ByteShinobi', 'GridNinja', 'PurpleKatana'] },
+  { id: 'bot_02', name: 'CryptoKing', avatar: 'mp_p3', mph: 8200, active: true, nicknames: ['CryptoKing', 'BlockBaron', 'ChainKing', 'VaultEmperor', 'TokenMonarch'] },
+  { id: 'bot_03', name: 'MinerX', avatar: 'mp_p4', mph: 3100, active: true, nicknames: ['MinerX', 'RigRunner', 'HashWorker', 'GPUProspector', 'BitDigger'] },
+  { id: 'bot_04', name: 'SatoshiFan', avatar: 'mp_p5', mph: 12000, active: true, nicknames: ['SatoshiFan', 'GenesisBeliever', 'SatsHunter', 'WhitepaperKid', 'NodeWatcher'] },
+  { id: 'bot_05', name: 'BlockMaster', avatar: 'mp_p6', mph: 4500, active: true, nicknames: ['BlockMaster', 'LedgerLord', 'ProofBoss', 'ConsensusAce', 'ChainMarshal'] },
+  { id: 'bot_06', name: 'SpeedRacer', avatar: 'mp_p7', mph: 6700, active: true, nicknames: ['SpeedRacer', 'TurboRunner', 'NeonSprint', 'VelocityViper', 'FastLaneX'] },
+  { id: 'bot_07', name: 'LuckyStrike', avatar: 'mp_p1', mph: 2800, active: true, nicknames: ['LuckyStrike', 'FortuneFlip', 'JackpotByte', 'RandomAce', 'GoldRush'] },
+  { id: 'bot_08', name: 'HashHunter', avatar: 'mp_p8', mph: 9300, active: true, nicknames: ['HashHunter', 'NonceSeeker', 'HashStalker', 'MiningScout', 'ProofChaser'] },
+  { id: 'bot_09', name: 'PixelMiner', avatar: 'mp_p2', mph: 5600, active: true, nicknames: ['PixelMiner', 'RetroHasher', '8BitDigger', 'ArcadeMiner', 'PixelProspector'] },
+  { id: 'bot_10', name: 'ChainBreaker', avatar: 'mp_p3', mph: 7100, active: true, nicknames: ['ChainBreaker', 'ForkRunner', 'BlockBender', 'LinkShatter', 'ProtocolWrecker'] },
+  { id: 'bot_11', name: 'TokenMaster', avatar: 'mp_p4', mph: 15000, active: true, nicknames: ['TokenMaster', 'SwapWizard', 'LiquidityMage', 'DexCommander', 'MarketMakerX'] },
+  { id: 'bot_12', name: 'GridRunner', avatar: 'mp_p5', mph: 4200, active: true, nicknames: ['GridRunner', 'SynthRunner', 'NeonGrid', 'CircuitRunner', 'MatrixDash'] },
+];
+
+const normalizeBots = (bots) => {
+  const saved = Array.isArray(bots) ? bots : [];
+  const savedById = new Map(saved.map(b => [b?.id, b]));
+  return BOT_CATALOG.map(tpl => {
+    const b = savedById.get(tpl.id) || {};
+    return {
+      ...tpl,
+      ...b,
+      nicknames: Array.isArray(tpl.nicknames) ? tpl.nicknames : [tpl.name]
+    };
+  });
+};
+
 const INITIAL_STATE = {
   user: {
     username: "investor_01",
@@ -70,18 +98,7 @@ const INITIAL_STATE = {
     nameKey: 'ongName'
   },
   bots: [
-    { id: 'bot_01', name: 'CyberNinja', avatar: 'mp_p2', mph: 5000, active: true },
-    { id: 'bot_02', name: 'CryptoKing', avatar: 'mp_p3', mph: 8200, active: true },
-    { id: 'bot_03', name: 'MinerX', avatar: 'mp_p4', mph: 3100, active: true },
-    { id: 'bot_04', name: 'SatoshiFan', avatar: 'mp_p5', mph: 12000, active: true },
-    { id: 'bot_05', name: 'BlockMaster', avatar: 'mp_p6', mph: 4500, active: true },
-    { id: 'bot_06', name: 'SpeedRacer', avatar: 'mp_p7', mph: 6700, active: true },
-    { id: 'bot_07', name: 'LuckyStrike', avatar: 'mp_p1', mph: 2800, active: true },
-    { id: 'bot_08', name: 'HashHunter', avatar: 'mp_p8', mph: 9300, active: true },
-    { id: 'bot_09', name: 'PixelMiner', avatar: 'mp_p2', mph: 5600, active: true },
-    { id: 'bot_10', name: 'ChainBreaker', avatar: 'mp_p3', mph: 7100, active: true },
-    { id: 'bot_11', name: 'TokenMaster', avatar: 'mp_p4', mph: 15000, active: true },
-    { id: 'bot_12', name: 'GridRunner', avatar: 'mp_p5', mph: 4200, active: true },
+    ...BOT_CATALOG,
   ],
   gameStats: {
     totalMatches: 0,
@@ -109,7 +126,7 @@ export const AppProvider = ({ children }) => {
                     rankings: parsed.rankings || INITIAL_STATE.rankings,
                     tournaments: parsed.tournaments || INITIAL_STATE.tournaments,
                     ong: parsed.ong || INITIAL_STATE.ong,
-                    bots: parsed.bots || INITIAL_STATE.bots,
+                    bots: normalizeBots(parsed.bots || INITIAL_STATE.bots),
                     gameStats: parsed.gameStats || INITIAL_STATE.gameStats,
                 }));
             } catch {
