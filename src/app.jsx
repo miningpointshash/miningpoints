@@ -19,7 +19,7 @@ import { AdminView } from './views/Admin';
 import { AuthView } from './views/Auth'; // Importa Auth
 import { EmailWelcomeView } from './views/EmailWelcome';
 import { AccountSwitchView } from './views/AccountSwitch';
-import { getReferralUsername, parseReferralFromLocation, setReferralUsername } from './utils/referral';
+import { clearReferralUsername, getReferralUsername, parseReferralFromLocation, setReferralUsername } from './utils/referral';
 
 // --- ERROR BOUNDARY ---
 class ErrorBoundary extends React.Component {
@@ -122,14 +122,14 @@ const Layout = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const ref = params.get('ref') || referralForSwitch || getReferralUsername();
+    const ref = params.get('ref');
     if (state.user.isAuthenticated && ref) {
       setReferralForSwitch(ref);
       setShowAccountSwitch(true);
     } else {
       setShowAccountSwitch(false);
     }
-  }, [state.user.isAuthenticated, referralForSwitch]);
+  }, [state.user.isAuthenticated]);
 
   const params = new URLSearchParams(window.location.search);
   const isWelcome = params.get('welcome') === '1';
@@ -163,11 +163,15 @@ const Layout = () => {
             window.location.href = url.toString();
           }}
           onCancel={() => {
+            clearReferralUsername();
+            setReferralForSwitch('');
+            setShowAccountSwitch(false);
             const url = new URL(window.location.href);
             url.pathname = '/';
             url.searchParams.delete('auth');
             url.searchParams.delete('ref');
-            window.location.href = url.toString();
+            url.searchParams.delete('view');
+            history.replaceState(null, '', url.toString());
           }}
         />
       );

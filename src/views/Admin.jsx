@@ -288,6 +288,14 @@ export const AdminView = ({ navigate }) => {
     const [viewFinancials, setViewFinancials] = useState(null); // Visualizar detalhes financeiros
     const [viewNetwork, setViewNetwork] = useState(null); // Visualizar rede do usuário
 
+    const normalizeUsername = (value) => {
+        const raw = String(value || '');
+        const noDiacritics = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const noSpaces = noDiacritics.replace(/\s+/g, '');
+        const allowedOnly = noSpaces.replace(/[^A-Za-z0-9_]/g, '');
+        return allowedOnly.slice(0, 32);
+    };
+
     const [stats, setStats] = useState({
         totalUsers: 0,
         totalMphInPlay: 0,
@@ -631,28 +639,61 @@ export const AdminView = ({ navigate }) => {
     };
 
     const handleUpdateUsername = async (userId, newUsername) => {
-        const candidate = String(newUsername || '').trim();
-        if (!candidate) return;
-
-        const normalized = candidate.replace(/\s+/g, '');
-        if (!/^[A-Za-z0-9_]{3,32}$/.test(normalized)) {
-            addNotification('Username inválido. Use apenas letras, números e underline (3 a 32).', 'danger');
-            return;
-        }
-
-        if (!window.confirm(`Deseja alterar o username para "${normalized}"?`)) return;
-
         try {
-            const { data, error } = await supabase.rpc('admin_update_username', {
-                target_user_id: userId,
-                new_username: normalized
-            });
+            const normalized = normalizeUsername(String(newUsername || '').trim());
+            if (!normalized) return;
 
-            if (error) throw error;
+            if (!/^[A-Za-z0-9_]{3,32}$/.test(normalized)) {
+                addNotification('Username inválido. Use apenas letras, números e underline (3 a 32).', 'danger');
+                return;
+            }
 
-            setUsers(prev => prev.map(u => u.id === userId ? { ...u, username: data?.new_username || normalized } : u));
-            setEditUser(prev => prev ? { ...prev, username: data?.new_username || normalized } : prev);
-            setViewFinancials(prev => prev && prev.id === userId ? { ...prev, username: data?.new_username || normalized } : prev);
+            const { data: existing, error: existingError } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('username', normalized)
+                .limit(1);
+
+            if (existingError) throw existingError;
+            const takenByOther = Array.isArray(existing) && existing.length > 0 && existing[0]?.id && existing[0].id !== userId;
+            if (takenByOther) {
+                addNotification('Este username já está em uso.', 'danger');
+                return;
+            }
+
+            if (!window.confirm(`Deseja alterar o username para "${normalized}"?`)) return;
+
+            let finalUsername = normalized;
+
+            try {
+                const { data, error } = await supabase.rpc('admin_update_username', {
+                    target_user_id: userId,
+                    new_username: normalized
+                });
+
+                if (error) throw error;
+                finalUsername = data?.new_username || normalized;
+            } catch (rpcErr) {
+                const msg = String(rpcErr?.message || '').toLowerCase();
+                const isMissingFn =
+                    msg.includes('could not find the function') ||
+                    msg.includes('schema cache') ||
+                    msg.includes('pgrst202');
+
+                if (!isMissingFn) throw rpcErr;
+
+                const { error: updateError } = await supabase
+                    .from('profiles')
+                    .update({ username: normalized })
+                    .eq('id', userId);
+
+                if (updateError) throw updateError;
+            }
+
+            setUsers(prev => prev.map(u => u.id === userId ? { ...u, username: finalUsername } : u));
+            setEditUser(prev => prev ? { ...prev, username: finalUsername } : prev);
+            setViewFinancials(prev => prev && prev.id === userId ? { ...prev, username: finalUsername } : prev);
+            setViewNetwork(prev => prev && prev.id === userId ? { ...prev, username: finalUsername } : prev);
             addNotification('Username atualizado com sucesso!', 'success');
         } catch (e) {
             console.error('Erro ao atualizar username:', e);
@@ -1045,7 +1086,7 @@ export const AdminView = ({ navigate }) => {
                                                 defaultValue={editUser.username || ''}
                                                 className="w-full bg-black border border-gray-700 rounded p-2 text-sm text-white focus:border-purple-500 outline-none"
                                                 onChange={(e) => {
-                                                    e.target.value = e.target.value.replace(/\s+/g, '');
+                                                    e.target.value = normalizeUsername(e.target.value);
                                                 }}
                                             />
                                             <Button

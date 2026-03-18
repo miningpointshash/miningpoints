@@ -1,5 +1,5 @@
 import React, { useContext, useState } from 'react';
-import { Briefcase, Zap } from 'lucide-react';
+import { Briefcase, Zap, CalendarDays, DollarSign, Percent, Unlock } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
 import { THEME } from '../utils/theme';
 import { Button } from '../components/ui/Button';
@@ -50,18 +50,48 @@ export const InvestView = ({ navigate }) => {
 
       <div className="grid gap-6">
         {/* Standard */}
-        <Card className="border-gray-700 relative group">
-          <div className="absolute top-0 right-0 bg-gray-700 text-[10px] px-2 py-1 rounded-bl text-white">{t('invest.standardBadge')}</div>
-          <h3 className="text-xl font-bold text-white mb-1">{t('invest.standardName')}</h3>
-          <div className="flex items-end gap-2 mb-4">
-            <span className="text-3xl font-bold text-purple-400">180%</span>
-            <span className="text-sm text-gray-400 mb-1">{t('invest.totalProfit')}</span>
+        <Card className="border-gray-700 relative overflow-hidden pt-8">
+          <div className="absolute top-2 right-2 bg-gray-700 text-[10px] px-2 py-1 rounded text-white z-10">
+            {t('invest.standardBadge')}
           </div>
-          <ul className="text-xs text-gray-300 space-y-2 mb-4">
-            <li className="flex justify-between"><span>{t('invest.dailyReturn')}</span> <span className="text-white">~1.0%</span></li>
-            <li className="flex justify-between"><span>{t('invest.duration')}</span> <span className="text-white">180 dias</span></li>
-            <li className="flex justify-between"><span>{t('invest.minmax')}</span> <span className="text-white">$10 - $1,999</span></li>
-          </ul>
+
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="min-w-0">
+              <h3 className="text-xl font-bold text-white leading-tight">{t('invest.standardName')}</h3>
+              <p className="text-[11px] text-gray-500">Modalidade Standard</p>
+            </div>
+            <div className="flex-shrink-0 text-right">
+              <div className="text-4xl font-black text-purple-400 leading-none">180%</div>
+              <div className="text-[10px] text-gray-500 uppercase">{t('invest.totalProfit')}</div>
+            </div>
+          </div>
+
+          <div className="space-y-2 mb-4">
+            <div className="flex items-center justify-between gap-3 bg-black/30 border border-gray-800 rounded-lg p-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <CalendarDays size={16} className="text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-300 truncate">{t('invest.duration')}</span>
+              </div>
+              <span className="text-xs text-white font-bold whitespace-nowrap">180 dias</span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 bg-black/30 border border-gray-800 rounded-lg p-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <DollarSign size={16} className="text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-300 truncate">{t('invest.minmax')}</span>
+              </div>
+              <span className="text-xs text-white font-bold whitespace-nowrap">$10 - $1,999</span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 bg-black/30 border border-gray-800 rounded-lg p-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Percent size={16} className="text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-300 truncate">{t('invest.dailyReturn')}</span>
+              </div>
+              <span className="text-xs text-white font-bold whitespace-nowrap">1% ao dia</span>
+            </div>
+          </div>
+
           <input 
             type="number" 
             placeholder={t('invest.usdValuePlaceholder')} 
@@ -79,16 +109,51 @@ export const InvestView = ({ navigate }) => {
           <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-[#ff00ff] text-black font-bold text-[10px] px-3 py-1 rounded-full uppercase">
             {t('invest.popular')}
           </div>
-          <h3 className="text-xl font-bold text-white mb-1">{t('invest.premiumName')}</h3>
-          <div className="flex items-end gap-2 mb-4">
-            <span className="text-3xl font-bold text-[#ff00ff]">1.3%</span>
-            <span className="text-sm text-gray-400 mb-1">{t('invest.premiumDaily')}</span>
+          <div className="flex items-start justify-between gap-3 mb-4 pt-2">
+            <div className="min-w-0">
+              <h3 className="text-xl font-bold text-white leading-tight">{t('invest.premiumName')}</h3>
+              <p className="text-[11px] text-gray-500">Modalidade Premium</p>
+            </div>
+            <div className="flex-shrink-0 text-right">
+              <div className="text-4xl font-black text-[#ff00ff] leading-none">475%</div>
+              <div className="text-[10px] text-gray-500 uppercase">{t('invest.totalProfit')}</div>
+            </div>
           </div>
-          <ul className="text-xs text-gray-300 space-y-2 mb-4">
-            <li className="flex justify-between"><span>{t('invest.totalReturn')}</span> <span className="text-white">{t('invest.lifetime')}</span></li>
-            <li className="flex justify-between"><span>{t('invest.minmax')}</span> <span className="text-white">$2,000 - $1M</span></li>
-            <li className="flex justify-between"><span className="text-yellow-400">Bonus:</span> <span className="text-white">Prioridade na Fila</span></li>
-          </ul>
+
+          <div className="space-y-2 mb-4">
+            <div className="flex items-center justify-between gap-3 bg-black/30 border border-gray-800 rounded-lg p-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <CalendarDays size={16} className="text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-300 truncate">{t('invest.duration')}</span>
+              </div>
+              <span className="text-xs text-white font-bold whitespace-nowrap">365 dias</span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 bg-black/30 border border-gray-800 rounded-lg p-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <DollarSign size={16} className="text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-300 truncate">{t('invest.minmax')}</span>
+              </div>
+              <span className="text-xs text-white font-bold whitespace-nowrap">A partir de $2,000</span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 bg-black/30 border border-gray-800 rounded-lg p-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Percent size={16} className="text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-300 truncate">{t('invest.dailyReturn')}</span>
+              </div>
+              <span className="text-xs text-white font-bold whitespace-nowrap">1.3% ao dia</span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 bg-black/30 border border-gray-800 rounded-lg p-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Unlock size={16} className="text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-300 truncate">Residual</span>
+              </div>
+              <span className="text-xs text-white font-bold whitespace-nowrap">Livre</span>
+            </div>
+          </div>
+
            {/* NEW INPUT FOR PREMIUM */}
            <input 
             type="number" 
@@ -97,7 +162,7 @@ export const InvestView = ({ navigate }) => {
             value={premAmount}
             onChange={(e) => setPremAmount(e.target.value)}
           />
-           <Button onClick={() => handleBuy('premium', 2000, 99999999, premAmount, setPremAmount)} variant="outline" className="w-full text-sm">
+           <Button onClick={() => handleBuy('premium', 2000, 1000000, premAmount, setPremAmount)} variant="outline" className="w-full text-sm">
             {t('invest.unlockPassive')}
           </Button>
         </Card>
