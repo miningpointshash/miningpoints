@@ -77,12 +77,12 @@ const INITIAL_STATE = {
       { id: 3, name: 'BitHunter', score: 9800, avatar: 'mp_p2' },
       { id: 4, name: 'SatoshiFan', score: 8500, avatar: 'mp_p5' },
       { id: 5, name: 'BlockMaster', score: 7200, avatar: 'mp_p6' },
-    ] },
+    ], participants: 0 },
     biweekly: { pool: 4200, users: [
       { id: 1, name: 'SpeedRacer', score: 5400, avatar: 'mp_p7' },
       { id: 2, name: 'CryptoKing', score: 4800, avatar: 'mp_p3' },
       { id: 3, name: 'LuckyStrike', score: 3200, avatar: 'mp_p1' },
-    ] }
+    ], participants: 0 }
   },
   tournaments: {
     pool: 15000,
@@ -201,6 +201,7 @@ export const AppProvider = ({ children }) => {
                         username: username,
                         email: user.email,
                         full_name: user.user_metadata?.full_name,
+                        avatar_url: 'mp_p6',
                         role: 'user',
                         account_status: 'active'
                     }]);
@@ -326,6 +327,43 @@ export const AppProvider = ({ children }) => {
                  notifications: mappedNotifications,
                  miningHistory: mappedMiningHistory
              }));
+
+                try {
+                    const [{ data: meta }, { data: monthly }, { data: biweekly }] = await Promise.all([
+                        supabase.rpc('get_arcade_meta_snapshot'),
+                        supabase.rpc('get_pvp_ranking_snapshot', { p_period: 'monthly', p_limit: 10 }),
+                        supabase.rpc('get_pvp_ranking_snapshot', { p_period: 'biweekly', p_limit: 10 })
+                    ]);
+
+                    if (meta?.ok || monthly?.ok || biweekly?.ok) {
+                        setState(prev => ({
+                            ...prev,
+                            rankings: {
+                                monthly: {
+                                    pool: Number(monthly?.pool ?? meta?.rankings?.monthly_pool ?? prev.rankings.monthly.pool ?? 0),
+                                    participants: Number(monthly?.participants ?? 0),
+                                    users: Array.isArray(monthly?.users) ? monthly.users : prev.rankings.monthly.users
+                                },
+                                biweekly: {
+                                    pool: Number(biweekly?.pool ?? meta?.rankings?.biweekly_pool ?? prev.rankings.biweekly.pool ?? 0),
+                                    participants: Number(biweekly?.participants ?? 0),
+                                    users: Array.isArray(biweekly?.users) ? biweekly.users : prev.rankings.biweekly.users
+                                }
+                            },
+                            tournaments: {
+                                pool: Number(meta?.tournaments?.pool ?? prev.tournaments.pool ?? 0),
+                                list: Array.isArray(meta?.tournaments?.list) ? meta.tournaments.list : prev.tournaments.list
+                            },
+                            ong: {
+                                ...prev.ong,
+                                pool: Number(meta?.ong?.pool ?? prev.ong.pool ?? 0),
+                                totalDonated: Number(meta?.ong?.totalDonated ?? prev.ong.totalDonated ?? 0)
+                            }
+                        }));
+                    }
+                } catch (err) {
+                    console.error('Erro ao carregar rankings/torneios/ONG:', err);
+                }
             }
         } catch (error) {
             console.error("Erro na sincronização Supabase:", error);

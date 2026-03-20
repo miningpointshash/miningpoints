@@ -25,6 +25,18 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
     const [sponsorName, setSponsorName] = useState('Carregando...');
     const [isWalletTokenSending, setIsWalletTokenSending] = useState(false);
     const [isWalletSaving, setIsWalletSaving] = useState(false);
+    const [showAvatarModal, setShowAvatarModal] = useState(false);
+    const [isAvatarSaving, setIsAvatarSaving] = useState(false);
+    const [isAvatarUploading, setIsAvatarUploading] = useState(false);
+
+    const getAvatarSrc = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw || raw === 'default') return '/assets/persona/mp_p6.svg';
+        if (/^https?:\/\//i.test(raw)) return raw;
+        return `/assets/persona/${raw}.svg`;
+    };
+
+    const availablePersonas = ['mp_p1', 'mp_p2', 'mp_p3', 'mp_p4', 'mp_p5', 'mp_p6', 'mp_p7', 'mp_p8'];
 
     useEffect(() => {
         setSubTab(initialTab);
@@ -54,6 +66,63 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
 
     const updateUserField = (field, value) => {
         setState(prev => ({ ...prev, user: { ...prev.user, [field]: value } }));
+    };
+
+    const saveAvatarPersona = async (personaKey) => {
+        if (isAvatarSaving) return;
+        setIsAvatarSaving(true);
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ avatar_url: personaKey })
+                .eq('id', state.user.id);
+            if (error) throw error;
+            updateUserField('avatar_url', personaKey);
+            addNotification('Avatar atualizado!', 'success');
+            setShowAvatarModal(false);
+        } catch (err) {
+            console.error('Erro ao atualizar avatar:', err);
+            addNotification(err?.message || 'Erro ao atualizar avatar.', 'danger');
+        } finally {
+            setIsAvatarSaving(false);
+        }
+    };
+
+    const uploadAvatarFile = async (file) => {
+        if (!file) return;
+        if (isAvatarUploading) return;
+        setIsAvatarUploading(true);
+        try {
+            const userId = state.user.id;
+            const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+            const safeExt = ['png', 'jpg', 'jpeg', 'webp'].includes(ext) ? ext : 'png';
+            const path = `${userId}/${Date.now()}.${safeExt}`;
+
+            const { error: uploadError } = await supabase
+                .storage
+                .from('avatars')
+                .upload(path, file, { upsert: true, contentType: file.type || 'image/png' });
+            if (uploadError) throw uploadError;
+
+            const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+            const publicUrl = data?.publicUrl;
+            if (!publicUrl) throw new Error('Falha ao obter URL do avatar.');
+
+            const { error: profileError } = await supabase
+                .from('profiles')
+                .update({ avatar_url: publicUrl })
+                .eq('id', userId);
+            if (profileError) throw profileError;
+
+            updateUserField('avatar_url', publicUrl);
+            addNotification('Foto de perfil atualizada!', 'success');
+            setShowAvatarModal(false);
+        } catch (err) {
+            console.error('Erro ao enviar avatar:', err);
+            addNotification(err?.message || 'Erro ao enviar avatar.', 'danger');
+        } finally {
+            setIsAvatarUploading(false);
+        }
     };
 
     const handleRequestWalletToken = async () => {
@@ -200,9 +269,9 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                  <h2 className="text-xl font-bold text-white mb-6">{t('menu.settings')}</h2>
                  <div className="space-y-6">
                     <div className="flex items-center gap-4 bg-gray-900 p-4 rounded-xl border border-gray-800">
-                        <div className="relative group cursor-pointer" onClick={() => alert('Abrir galeria de avatares...')}>
+                        <div className="relative group cursor-pointer" onClick={() => setShowAvatarModal(true)}>
                             <div className="w-16 h-16 bg-gray-700 rounded-full overflow-hidden border-2 border-purple-500">
-                                <User size={40} className="text-gray-400 m-auto mt-2"/>
+                                <img src={getAvatarSrc(state.user.avatar_url)} alt="avatar" className="w-full h-full object-cover" />
                             </div>
                             <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                                 <Camera size={20} className="text-white"/>
@@ -216,6 +285,46 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                             </p>
                         </div>
                     </div>
+                    {showAvatarModal && (
+                        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+                            <Card className="w-full max-w-md bg-gray-900 border-gray-700 p-5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="font-bold text-white">Foto de Perfil</h3>
+                                    <Button size="icon" variant="ghost" onClick={() => setShowAvatarModal(false)}><X size={18} /></Button>
+                                </div>
+
+                                <div className="bg-black/40 border border-gray-800 rounded p-3 mb-4">
+                                    <div className="text-xs text-gray-400 mb-2">Escolha um personagem</div>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {availablePersonas.map((p) => (
+                                            <button
+                                                key={p}
+                                                onClick={() => saveAvatarPersona(p)}
+                                                disabled={isAvatarSaving || isAvatarUploading}
+                                                className={`bg-gray-800/40 border rounded p-2 transition ${
+                                                    String(state.user.avatar_url || '') === p ? 'border-green-500/60' : 'border-gray-700'
+                                                }`}
+                                            >
+                                                <img src={`/assets/persona/${p}.svg`} alt={p} className="w-10 h-10 mx-auto" />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="bg-black/40 border border-gray-800 rounded p-3">
+                                    <div className="text-xs text-gray-400 mb-2">Ou envie uma foto do seu aparelho</div>
+                                    <input
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/webp"
+                                        onChange={(e) => uploadAvatarFile(e.target.files?.[0])}
+                                        disabled={isAvatarSaving || isAvatarUploading}
+                                        className="w-full text-xs text-gray-300"
+                                    />
+                                    <div className="text-[10px] text-gray-500 mt-2">PNG/JPG/WebP. Recomendado: imagem quadrada.</div>
+                                </div>
+                            </Card>
+                        </div>
+                    )}
                     <Card><h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><Edit3 size={16} className="text-purple-400"/> {t('menu.changeUsername')}</h4><div className="space-y-2"><input type="text" placeholder={t('menu.newUsername')} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white" value={newUsername} onChange={(e) => setNewUsername(e.target.value)}/><div className="flex gap-2"><input type="text" placeholder={t('menu.tokenPlaceholder')} className="flex-1 bg-black border border-gray-700 rounded p-2 text-xs text-white" value={usernameToken} onChange={(e) => setUsernameToken(e.target.value)}/><button onClick={() => addNotification('Token enviado para ' + state.user.email, 'success')} className="bg-gray-800 text-xs px-3 rounded text-gray-300 whitespace-nowrap">{t('menu.requestToken')}</button></div><Button onClick={handleSaveUsername} className="w-full text-xs py-2 mt-2">{t('menu.updateUsername')}</Button></div></Card>
                     <Card>
                         <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">

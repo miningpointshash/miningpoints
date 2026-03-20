@@ -75,6 +75,13 @@ const Layout = () => {
   const [isLanguageOpen, setLanguageOpen] = useState(false);
   const [showAccountSwitch, setShowAccountSwitch] = useState(false);
   const [referralForSwitch, setReferralForSwitch] = useState('');
+
+  const getAvatarSrc = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw || raw === 'default') return '/assets/persona/mp_p6.svg';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    return `/assets/persona/${raw}.svg`;
+  };
   
   // Landing Page State
   const initialHasReferral =
@@ -243,7 +250,17 @@ const Layout = () => {
             </div>
             <div className="relative">
                 <button onClick={() => setProfileOpen(!isProfileOpen)} className="flex items-center gap-2 bg-gray-900 px-2 py-1 rounded-full border border-gray-700 hover:border-purple-500 transition-colors">
-                    <div className="w-6 h-6 bg-gray-700 rounded-full overflow-hidden"><User size={24} className="text-gray-400 p-1"/></div>
+                    <div className="w-6 h-6 bg-gray-700 rounded-full overflow-hidden">
+                      <img
+                        src={getAvatarSrc(state.user.avatar_url)}
+                        alt="avatar"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = '/assets/persona/mp_p6.svg';
+                        }}
+                      />
+                    </div>
                     <span className="text-xs font-bold truncate max-w-[60px]">{state.user.username}</span>
                 </button>
                 {isProfileOpen && (

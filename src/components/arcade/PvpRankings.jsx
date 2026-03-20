@@ -7,6 +7,12 @@ export const PvpRankings = ({ rankings, t }) => {
 
     const currentRanking = tab === 'monthly' ? rankings.monthly : rankings.biweekly;
     const pool = currentRanking.pool;
+    const getAvatarSrc = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '/assets/persona/mp_p6.svg';
+        if (/^https?:\/\//i.test(raw)) return raw;
+        return `/assets/persona/${raw}.svg`;
+    };
 
     const getPrizeShare = (position) => {
         if (position === 1) return 0.40;
@@ -41,10 +47,13 @@ export const PvpRankings = ({ rankings, t }) => {
             <div className="text-center mb-6 bg-yellow-900/20 py-3 rounded-lg border border-yellow-900/50">
                 <p className="text-xs text-yellow-500 uppercase tracking-widest mb-1">{t('arcade.prizePool') || 'Fundo de Prêmios'}</p>
                 <p className="text-2xl font-mono font-bold text-yellow-400">{pool.toFixed(0)} MPH</p>
+                <p className="text-[10px] text-gray-400 mt-1">
+                    {t('arcade.participants') || 'Participantes'}: {Number(currentRanking.participants || 0)}
+                </p>
             </div>
 
             <div className="space-y-2">
-                {currentRanking.users.map((user, index) => {
+                {(currentRanking.users || []).map((user, index) => {
                     const position = index + 1;
                     const prize = pool * getPrizeShare(position);
                     
@@ -60,7 +69,7 @@ export const PvpRankings = ({ rankings, t }) => {
                                     {rankIcon}
                                 </div>
                                 <div className="w-8 h-8 rounded-full bg-gray-700 overflow-hidden border border-gray-600">
-                                    <img src={`/assets/persona/${user.avatar}.svg`} alt="avatar" className="w-full h-full object-cover" />
+                                    <img src={getAvatarSrc(user.avatar || 'mp_p6')} alt="avatar" className="w-full h-full object-cover" />
                                 </div>
                                 <div>
                                     <p className="text-sm font-bold text-white">{user.name}</p>

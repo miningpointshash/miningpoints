@@ -366,6 +366,9 @@ export const AdminView = ({ navigate }) => {
     const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'users', 'bots', 'settings'
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [tournamentAdmin, setTournamentAdmin] = useState({ loading: false, pool: 0, list: [] });
+    const [tournamentSplit, setTournamentSplit] = useState({ count: 2, entryFee: 500, status: 'open', namePrefix: 'Torneio', color: 'yellow' });
+    const [tournamentCreate, setTournamentCreate] = useState({ name: 'Torneio', entryFee: 500, prizePool: 1000, status: 'open', color: 'yellow' });
     
     // Configurações de Pagamento
     const [paymentConfig, setPaymentConfig] = useState({
@@ -469,6 +472,28 @@ export const AdminView = ({ navigate }) => {
             console.error('Erro ao carregar estatísticas:', error);
         }
     };
+
+    const fetchTournamentAdmin = async () => {
+        setTournamentAdmin(prev => ({ ...prev, loading: true }));
+        try {
+            const { data, error } = await supabase.rpc('get_arcade_meta_snapshot');
+            if (error) throw error;
+            setTournamentAdmin({
+                loading: false,
+                pool: Number(data?.tournaments?.pool || 0),
+                list: Array.isArray(data?.tournaments?.list) ? data.tournaments.list : []
+            });
+        } catch (err) {
+            console.error('Erro ao carregar torneios:', err);
+            setTournamentAdmin(prev => ({ ...prev, loading: false }));
+        }
+    };
+
+    useEffect(() => {
+        if (!['admin_master', 'admin_finance'].includes(state.user.role)) return;
+        if (activeTab !== 'tournaments') return;
+        fetchTournamentAdmin();
+    }, [activeTab, state.user.role]);
 
     // Carregar usuários do Supabase
     const fetchUsers = async () => {
@@ -982,7 +1007,13 @@ export const AdminView = ({ navigate }) => {
                                         user.account_status === 'inactive' ? 'bg-gray-900/30 border-gray-500/50 text-gray-400' :
                                         'bg-blue-900/30 border-blue-500/50 text-blue-400'
                                     }`}>
-                                        {user.account_status === 'active' ? 'VERDE' : user.account_status === 'blocked' ? 'BLOQUEADO' : user.account_status === 'inactive' ? 'INATIVO' : 'PATROCINADO'}
+                                        {user.account_status === 'active'
+                                            ? 'VERDE'
+                                            : user.account_status === 'blocked'
+                                            ? 'BLOQUEADO'
+                                            : user.account_status === 'inactive'
+                                            ? 'INATIVO'
+                                            : `PATROCINADO (meta ${(user.sponsored_multiplier || 3) * 100}%)`}
                                     </span>
                                 </h4>
                                 <p className="text-xs text-gray-500">{user.email}</p>
@@ -1104,6 +1135,16 @@ export const AdminView = ({ navigate }) => {
                                         <Copy size={14} />
                                     </button>
                                 </div>
+                                {viewFinancials.account_status === 'sponsored' && (
+                                    <div className="mt-2 flex items-center justify-between gap-3 bg-blue-900/10 border border-blue-900/40 rounded p-2">
+                                        <span className="text-[10px] text-blue-300 uppercase font-bold">Meta atual (rede)</span>
+                                        <span className="text-[10px] font-mono text-blue-200">
+                                            ${Number(viewFinancials.network_volume || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${(
+                                                Number(viewFinancials.sponsored_amount || 0) * Number(viewFinancials.sponsored_multiplier || 3)
+                                            ).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                             <Button size="icon" variant="ghost" onClick={() => setViewFinancials(null)}><X size={24} /></Button>
                         </div>
@@ -1581,6 +1622,230 @@ export const AdminView = ({ navigate }) => {
         </div>
     );
 
+    const renderTournaments = () => (
+        <div className="space-y-4 pb-20">
+            <div className="flex items-center justify-between">
+                <h3 className="font-bold text-white flex items-center gap-2"><Trophy size={18} /> Torneios</h3>
+                <Button size="sm" variant="outline" onClick={fetchTournamentAdmin}><RefreshCw size={14} className="mr-1" /> Atualizar</Button>
+            </div>
+
+            <Card className="bg-gray-900/50 border-gray-800 p-4">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-xs text-gray-400 uppercase">Fundo Acumulado</p>
+                        <p className="text-2xl font-mono font-bold text-yellow-400">{Number(tournamentAdmin.pool || 0).toFixed(2)} MPH</p>
+                    </div>
+                    <div className="text-right text-xs text-gray-500">
+                        <div>Total de torneios: {Array.isArray(tournamentAdmin.list) ? tournamentAdmin.list.length : 0}</div>
+                    </div>
+                </div>
+            </Card>
+
+            <Card className="bg-gray-900/50 border-gray-800 p-4">
+                <h4 className="font-bold text-white mb-3">Dividir Fundo em 2–4 Torneios</h4>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                    <select
+                        value={tournamentSplit.count}
+                        onChange={(e) => setTournamentSplit(prev => ({ ...prev, count: Number(e.target.value) }))}
+                        className="w-full bg-black border border-gray-700 rounded p-3 text-white text-sm outline-none"
+                    >
+                        <option value={2}>2 torneios</option>
+                        <option value={3}>3 torneios</option>
+                        <option value={4}>4 torneios</option>
+                    </select>
+                    <input
+                        type="number"
+                        min="1"
+                        value={tournamentSplit.entryFee}
+                        onChange={(e) => setTournamentSplit(prev => ({ ...prev, entryFee: Number(e.target.value) }))}
+                        className="w-full bg-black border border-gray-700 rounded p-3 text-white text-sm outline-none"
+                        placeholder="Entrada (MPH)"
+                    />
+                    <input
+                        value={tournamentSplit.namePrefix}
+                        onChange={(e) => setTournamentSplit(prev => ({ ...prev, namePrefix: e.target.value }))}
+                        className="w-full bg-black border border-gray-700 rounded p-3 text-white text-sm outline-none"
+                        placeholder="Prefixo do nome"
+                    />
+                    <select
+                        value={tournamentSplit.status}
+                        onChange={(e) => setTournamentSplit(prev => ({ ...prev, status: e.target.value }))}
+                        className="w-full bg-black border border-gray-700 rounded p-3 text-white text-sm outline-none"
+                    >
+                        <option value="open">OPEN</option>
+                        <option value="upcoming">UPCOMING</option>
+                        <option value="live">LIVE</option>
+                    </select>
+                    <select
+                        value={tournamentSplit.color}
+                        onChange={(e) => setTournamentSplit(prev => ({ ...prev, color: e.target.value }))}
+                        className="w-full bg-black border border-gray-700 rounded p-3 text-white text-sm outline-none"
+                    >
+                        <option value="yellow">Amarelo</option>
+                        <option value="green">Verde</option>
+                        <option value="blue">Azul</option>
+                        <option value="purple">Roxo</option>
+                        <option value="red">Vermelho</option>
+                    </select>
+                </div>
+                <div className="mt-3">
+                    <Button
+                        className="w-full bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-3"
+                        onClick={async () => {
+                            try {
+                                const { data, error } = await supabase.rpc('admin_split_tournaments_pool', {
+                                    p_count: tournamentSplit.count,
+                                    p_entry_fee_mph: tournamentSplit.entryFee,
+                                    p_status: tournamentSplit.status,
+                                    p_name_prefix: tournamentSplit.namePrefix,
+                                    p_color_theme: tournamentSplit.color
+                                });
+                                if (error) throw error;
+                                if (!data?.ok) throw new Error(data?.error || 'Falha ao dividir fundo');
+                                addNotification('Torneios criados com sucesso.', 'success');
+                                fetchTournamentAdmin();
+                            } catch (err) {
+                                console.error('Erro ao dividir fundo:', err);
+                                addNotification(err?.message || 'Erro ao dividir fundo.', 'danger');
+                            }
+                        }}
+                        disabled={tournamentAdmin.loading}
+                    >
+                        Criar e Dividir Fundo
+                    </Button>
+                </div>
+            </Card>
+
+            <Card className="bg-gray-900/50 border-gray-800 p-4">
+                <h4 className="font-bold text-white mb-3">Criar Torneio Único (retira do fundo acumulado)</h4>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                    <input
+                        value={tournamentCreate.name}
+                        onChange={(e) => setTournamentCreate(prev => ({ ...prev, name: e.target.value }))}
+                        className="w-full bg-black border border-gray-700 rounded p-3 text-white text-sm outline-none md:col-span-2"
+                        placeholder="Nome"
+                    />
+                    <input
+                        type="number"
+                        min="1"
+                        value={tournamentCreate.entryFee}
+                        onChange={(e) => setTournamentCreate(prev => ({ ...prev, entryFee: Number(e.target.value) }))}
+                        className="w-full bg-black border border-gray-700 rounded p-3 text-white text-sm outline-none"
+                        placeholder="Entrada (MPH)"
+                    />
+                    <input
+                        type="number"
+                        min="1"
+                        value={tournamentCreate.prizePool}
+                        onChange={(e) => setTournamentCreate(prev => ({ ...prev, prizePool: Number(e.target.value) }))}
+                        className="w-full bg-black border border-gray-700 rounded p-3 text-white text-sm outline-none"
+                        placeholder="Prêmio (MPH)"
+                    />
+                    <select
+                        value={tournamentCreate.color}
+                        onChange={(e) => setTournamentCreate(prev => ({ ...prev, color: e.target.value }))}
+                        className="w-full bg-black border border-gray-700 rounded p-3 text-white text-sm outline-none"
+                    >
+                        <option value="yellow">Amarelo</option>
+                        <option value="green">Verde</option>
+                        <option value="blue">Azul</option>
+                        <option value="purple">Roxo</option>
+                        <option value="red">Vermelho</option>
+                    </select>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                    <select
+                        value={tournamentCreate.status}
+                        onChange={(e) => setTournamentCreate(prev => ({ ...prev, status: e.target.value }))}
+                        className="w-full bg-black border border-gray-700 rounded p-3 text-white text-sm outline-none"
+                    >
+                        <option value="open">OPEN</option>
+                        <option value="upcoming">UPCOMING</option>
+                        <option value="live">LIVE</option>
+                    </select>
+                    <Button
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3"
+                        onClick={async () => {
+                            try {
+                                const { data, error } = await supabase.rpc('admin_create_tournament_from_pool', {
+                                    p_name: tournamentCreate.name,
+                                    p_entry_fee_mph: tournamentCreate.entryFee,
+                                    p_prize_pool_mph: tournamentCreate.prizePool,
+                                    p_status: tournamentCreate.status,
+                                    p_color_theme: tournamentCreate.color
+                                });
+                                if (error) throw error;
+                                if (!data?.ok) throw new Error(data?.error || 'Falha ao criar torneio');
+                                addNotification('Torneio criado com sucesso.', 'success');
+                                fetchTournamentAdmin();
+                            } catch (err) {
+                                console.error('Erro ao criar torneio:', err);
+                                addNotification(err?.message || 'Erro ao criar torneio.', 'danger');
+                            }
+                        }}
+                        disabled={tournamentAdmin.loading}
+                    >
+                        Criar Torneio
+                    </Button>
+                </div>
+            </Card>
+
+            <Card className="bg-gray-900/50 border-gray-800 p-4">
+                <h4 className="font-bold text-white mb-3">Torneios Cadastrados</h4>
+                {tournamentAdmin.loading ? (
+                    <div className="text-center text-gray-400 text-sm py-6">Carregando...</div>
+                ) : (
+                    <div className="space-y-2">
+                        {(tournamentAdmin.list || []).map((t) => (
+                            <div key={t.id} className="bg-black/40 border border-gray-800 rounded-lg p-3 flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-sm font-bold text-white">{t.name}</div>
+                                    <div className="text-[10px] text-gray-500">
+                                        Status: <span className="text-gray-300 font-mono">{String(t.status || '').toUpperCase()}</span>
+                                        {' • '}
+                                        Entrada: <span className="text-yellow-300 font-mono">{Number(t.entryFee || 0).toFixed(0)} MPH</span>
+                                        {' • '}
+                                        Prêmio: <span className="text-green-400 font-mono">{Number(t.prizePool || 0).toFixed(0)} MPH</span>
+                                        {' • '}
+                                        Participantes: <span className="text-purple-300 font-mono">{Number(t.participants || 0)}</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={t.status || 'open'}
+                                        onChange={async (e) => {
+                                            try {
+                                                const { error } = await supabase
+                                                    .from('tournaments')
+                                                    .update({ status: e.target.value })
+                                                    .eq('id', t.id);
+                                                if (error) throw error;
+                                                addNotification('Status atualizado.', 'success');
+                                                fetchTournamentAdmin();
+                                            } catch (err) {
+                                                console.error('Erro ao atualizar status:', err);
+                                                addNotification(err?.message || 'Erro ao atualizar status.', 'danger');
+                                            }
+                                        }}
+                                        className="bg-black border border-gray-700 rounded px-2 py-1 text-xs text-white outline-none"
+                                    >
+                                        <option value="open">OPEN</option>
+                                        <option value="upcoming">UPCOMING</option>
+                                        <option value="live">LIVE</option>
+                                        <option value="closed">CLOSED</option>
+                                    </select>
+                                </div>
+                            </div>
+                        ))}
+                        {(tournamentAdmin.list || []).length === 0 && (
+                            <div className="text-center text-gray-500 text-sm py-6">Nenhum torneio cadastrado.</div>
+                        )}
+                    </div>
+                )}
+            </Card>
+        </div>
+    );
+
     return (
         <div className="min-h-screen bg-black text-gray-200 pb-20">
             {/* Header Admin */}
@@ -1627,6 +1892,14 @@ export const AdminView = ({ navigate }) => {
                              <DollarSign size={16} className="mr-1" /> Saques
                         </Button>
                         <Button 
+                            variant={activeTab === 'tournaments' ? 'default' : 'outline'} 
+                            onClick={() => setActiveTab('tournaments')}
+                            size="sm"
+                            className={activeTab === 'tournaments' ? 'bg-yellow-600 text-black' : ''}
+                        >
+                             <Trophy size={16} className="mr-1" /> Torneios
+                        </Button>
+                        <Button 
                             variant={activeTab === 'settings' ? 'default' : 'outline'} 
                             onClick={() => setActiveTab('settings')}
                             size="sm"
@@ -1651,6 +1924,7 @@ export const AdminView = ({ navigate }) => {
                 {activeTab === 'dashboard' && renderDashboard()}
                 {activeTab === 'users' && renderUsers()}
                 {activeTab === 'bots' && renderBots()}
+                {activeTab === 'tournaments' && renderTournaments()}
                 {activeTab === 'settings' && renderSettings()}
                 {activeTab === 'withdrawals' && <WithdrawalManager currentAdmin={state.user} />}
                 {activeTab === 'support' && <SupportAdmin currentAdmin={state.user} />}

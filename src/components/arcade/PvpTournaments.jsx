@@ -39,7 +39,7 @@ export const PvpTournaments = ({ tournaments, t, onJoin }) => {
                             </div>
 
                             <div className="mb-4">
-                                <h4 className="text-lg font-bold text-white mb-1">{t(`arcade.${tournament.nameKey}`) || tournament.nameKey}</h4>
+                                <h4 className="text-lg font-bold text-white mb-1">{tournament.nameKey ? (t(`arcade.${tournament.nameKey}`) || tournament.nameKey) : (tournament.name || '')}</h4>
                                 <div className="flex gap-4 text-xs text-gray-400">
                                     <span className="flex items-center gap-1"><Users size={12}/> {tournament.participants} {t('arcade.participants')}</span>
                                     <span className="flex items-center gap-1"><Calendar size={12}/> {tournament.status === 'live' ? t('arcade.live') : t('arcade.comingSoon')}</span>

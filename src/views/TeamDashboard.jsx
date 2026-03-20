@@ -125,7 +125,7 @@ export const TeamDashboard = ({ onBack }) => {
 
     const getStatusLabel = (status) => {
         if (status === 'active') return <span className="bg-green-900/30 text-green-400 px-2 py-0.5 rounded-full">ATIVO</span>;
-        if (status === 'sponsored') return <span className="bg-blue-900/30 text-blue-400 px-2 py-0.5 rounded-full">PATROCINADO</span>;
+        if (status === 'sponsored') return <span className="bg-blue-900/30 text-blue-400 px-2 py-0.5 rounded-full">PATROCINADO (meta 200%/300%)</span>;
         if (status === 'inactive') return <span className="bg-red-900/30 text-red-400 px-2 py-0.5 rounded-full">INATIVO</span>;
         if (status === 'blocked') return <span className="bg-red-900/30 text-red-400 px-2 py-0.5 rounded-full">BLOQUEADO</span>;
         return <span className="bg-gray-900/30 text-gray-400 px-2 py-0.5 rounded-full">INATIVO</span>;
