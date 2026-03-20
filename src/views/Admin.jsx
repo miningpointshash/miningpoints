@@ -369,6 +369,10 @@ export const AdminView = ({ navigate }) => {
     const [tournamentAdmin, setTournamentAdmin] = useState({ loading: false, pool: 0, list: [] });
     const [tournamentSplit, setTournamentSplit] = useState({ count: 2, entryFee: 500, status: 'open', namePrefix: 'Torneio', color: 'yellow' });
     const [tournamentCreate, setTournamentCreate] = useState({ name: 'Torneio', entryFee: 500, prizePool: 1000, status: 'open', color: 'yellow' });
+    const [legacyMining, setLegacyMining] = useState({ amountUsd: '', planType: 'standard', note: '' });
+    const [isLegacyMiningApplying, setIsLegacyMiningApplying] = useState(false);
+    const [legacyMph, setLegacyMph] = useState({ amountMph: '', note: '' });
+    const [isLegacyMphApplying, setIsLegacyMphApplying] = useState(false);
     
     // Configurações de Pagamento
     const [paymentConfig, setPaymentConfig] = useState({
@@ -537,6 +541,65 @@ export const AdminView = ({ navigate }) => {
             addNotification('Erro ao carregar lista de usuários.', 'danger');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const applyLegacyMining = async (targetUser) => {
+        if (!targetUser?.id) return;
+        if (isLegacyMiningApplying) return;
+        const amount = Number(legacyMining.amountUsd || 0);
+        if (!amount || amount <= 0) {
+            addNotification('Informe um valor USD válido.', 'danger');
+            return;
+        }
+
+        setIsLegacyMiningApplying(true);
+        try {
+            const { data, error } = await supabase.rpc('admin_migrate_legacy_mining', {
+                p_user_id: targetUser.id,
+                p_plan_type: legacyMining.planType,
+                p_amount_usd: amount,
+                p_note: legacyMining.note || null
+            });
+            if (error) throw error;
+            if (!data?.ok) throw new Error(data?.error || 'Falha na migração.');
+            addNotification('Saldo migrado para mineração com sucesso.', 'success');
+            setLegacyMining({ amountUsd: '', planType: 'standard', note: '' });
+            fetchUsers();
+        } catch (err) {
+            console.error('Erro ao migrar saldo legacy:', err);
+            addNotification(err?.message || 'Erro ao migrar saldo.', 'danger');
+        } finally {
+            setIsLegacyMiningApplying(false);
+        }
+    };
+
+    const applyLegacyMph = async (targetUser) => {
+        if (!targetUser?.id) return;
+        if (isLegacyMphApplying) return;
+        const amount = Number(legacyMph.amountMph || 0);
+        if (!amount || amount <= 0) {
+            addNotification('Informe um valor MPH válido.', 'danger');
+            return;
+        }
+
+        setIsLegacyMphApplying(true);
+        try {
+            const { data, error } = await supabase.rpc('admin_migrate_legacy_mph', {
+                p_user_id: targetUser.id,
+                p_amount_mph: amount,
+                p_note: legacyMph.note || null
+            });
+            if (error) throw error;
+            if (!data?.ok) throw new Error(data?.error || 'Falha na migração.');
+            addNotification('Saldo MPH migrado para a carteira com sucesso.', 'success');
+            setLegacyMph({ amountMph: '', note: '' });
+            fetchUsers();
+        } catch (err) {
+            console.error('Erro ao migrar saldo legacy MPH:', err);
+            addNotification(err?.message || 'Erro ao migrar saldo MPH.', 'danger');
+        } finally {
+            setIsLegacyMphApplying(false);
         }
     };
 
@@ -1190,8 +1253,8 @@ export const AdminView = ({ navigate }) => {
 
             {/* Modal de Edição Rápida */}
             {editUser && (
-                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-                    <Card className="w-full max-w-sm bg-gray-900 border-gray-700 p-6">
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-start justify-center p-4 overflow-y-auto">
+                    <Card className="w-full max-w-sm bg-gray-900 border-gray-700 p-6 my-6 max-h-[85vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="font-bold text-lg">Editar: {editUser.username}</h3>
                             <Button size="icon" variant="ghost" onClick={() => setEditUser(null)}><X size={20} /></Button>
@@ -1317,6 +1380,84 @@ export const AdminView = ({ navigate }) => {
                                             ID Atual: <span className="font-mono text-xs">{editUser.sponsor_id || 'Nenhum'}</span>
                                         </p>
                                     </div>
+
+                                    {['admin_master', 'admin_finance'].includes(state.user.role) && (
+                                        <div className="bg-gray-800 p-3 rounded border border-gray-700 mt-2">
+                                            <label className="text-xs text-gray-400 mb-2 block font-bold flex items-center gap-1">
+                                                <Zap size={12} /> Migração de Saldo (Plataforma Anterior) → Mineração
+                                            </label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <select
+                                                    className="w-full bg-black border border-gray-700 rounded p-2 text-sm text-white"
+                                                    value={legacyMining.planType}
+                                                    onChange={(e) => setLegacyMining(prev => ({ ...prev, planType: e.target.value }))}
+                                                >
+                                                    <option value="standard">STANDARD (180%)</option>
+                                                    <option value="premium">PREMIUM (475%)</option>
+                                                </select>
+                                                <input
+                                                    type="number"
+                                                    min="0.01"
+                                                    step="0.01"
+                                                    value={legacyMining.amountUsd}
+                                                    onChange={(e) => setLegacyMining(prev => ({ ...prev, amountUsd: e.target.value }))}
+                                                    className="w-full bg-black border border-gray-700 rounded p-2 text-sm text-white focus:border-yellow-500 outline-none"
+                                                    placeholder="Valor USD"
+                                                />
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={legacyMining.note}
+                                                onChange={(e) => setLegacyMining(prev => ({ ...prev, note: e.target.value }))}
+                                                className="w-full bg-black border border-gray-700 rounded p-2 text-sm text-white mt-2 focus:border-purple-500 outline-none"
+                                                placeholder="Observação (opcional)"
+                                            />
+                                            <Button
+                                                className="w-full bg-yellow-600 hover:bg-yellow-700 text-black font-bold mt-3"
+                                                disabled={isLegacyMiningApplying}
+                                                onClick={() => applyLegacyMining(editUser)}
+                                            >
+                                                Aplicar na Mineração (gera logs)
+                                            </Button>
+                                            <p className="text-[10px] text-gray-500 mt-2">
+                                                Cria um plano ativo, registra transação e auditoria admin. Não entra como patrocínio.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {['admin_master', 'admin_finance'].includes(state.user.role) && (
+                                        <div className="bg-gray-800 p-3 rounded border border-gray-700 mt-2">
+                                            <label className="text-xs text-gray-400 mb-2 block font-bold flex items-center gap-1">
+                                                <Trophy size={12} /> Migração de Saldo MPH (Plataforma Anterior) → Carteira MPH
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="0.01"
+                                                step="0.01"
+                                                value={legacyMph.amountMph}
+                                                onChange={(e) => setLegacyMph(prev => ({ ...prev, amountMph: e.target.value }))}
+                                                className="w-full bg-black border border-gray-700 rounded p-2 text-sm text-white focus:border-yellow-500 outline-none"
+                                                placeholder="Valor MPH"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={legacyMph.note}
+                                                onChange={(e) => setLegacyMph(prev => ({ ...prev, note: e.target.value }))}
+                                                className="w-full bg-black border border-gray-700 rounded p-2 text-sm text-white mt-2 focus:border-purple-500 outline-none"
+                                                placeholder="Observação (opcional)"
+                                            />
+                                            <Button
+                                                className="w-full bg-yellow-600 hover:bg-yellow-700 text-black font-bold mt-3"
+                                                disabled={isLegacyMphApplying}
+                                                onClick={() => applyLegacyMph(editUser)}
+                                            >
+                                                Aplicar na Carteira MPH (gera logs)
+                                            </Button>
+                                            <p className="text-[10px] text-gray-500 mt-2">
+                                                Credita balance_mph, registra transação e auditoria admin. Não entra como patrocínio.
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                                 <Button 
                                     className="w-full bg-green-600 hover:bg-green-700 text-white font-bold mt-2"

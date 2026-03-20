@@ -2,7 +2,7 @@ import React, { useContext, useState, useEffect } from 'react';
 import { 
     Users, MessageSquare, Settings, Globe, LogOut, ChevronRight, Copy, Check, 
     Bot, Headphones, User, Clock, ExternalLink, Mail, Camera, Edit3, Key, 
-    Wallet, AlertTriangle, Save, Shield 
+    Wallet, AlertTriangle, Save, Shield, X
 } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
 import { AVAILABLE_LANGUAGES } from '../locales';
