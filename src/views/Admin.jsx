@@ -373,6 +373,10 @@ export const AdminView = ({ navigate }) => {
     const [isLegacyMiningApplying, setIsLegacyMiningApplying] = useState(false);
     const [legacyMph, setLegacyMph] = useState({ amountMph: '', note: '' });
     const [isLegacyMphApplying, setIsLegacyMphApplying] = useState(false);
+
+    const isFinanceAdmin = ['admin_master', 'admin_finance'].includes(state.user.role);
+    const isSupportRole = ['support_1', 'support_2'].includes(state.user.role);
+    const canAccessSupport = isFinanceAdmin || isSupportRole;
     
     // Configurações de Pagamento
     const [paymentConfig, setPaymentConfig] = useState({
@@ -2022,7 +2026,7 @@ export const AdminView = ({ navigate }) => {
                 >
                     Dashboard
                 </Button>
-                {['admin_master', 'admin_finance'].includes(state.user.role) && (
+                {isFinanceAdmin && (
                     <>
                         <Button 
                             variant={activeTab === 'withdrawals' ? 'default' : 'outline'} 
@@ -2048,15 +2052,17 @@ export const AdminView = ({ navigate }) => {
                         >
                              <Settings size={16} className="mr-1" /> Pagamentos
                         </Button>
-                        <Button 
-                            variant={activeTab === 'support' ? 'default' : 'outline'} 
-                            onClick={() => setActiveTab('support')}
-                            size="sm"
-                            className={activeTab === 'support' ? 'bg-blue-600' : ''}
-                        >
-                             <MessageSquare size={16} className="mr-1" /> Atendimento
-                        </Button>
                     </>
+                )}
+                {canAccessSupport && (
+                    <Button 
+                        variant={activeTab === 'support' ? 'default' : 'outline'} 
+                        onClick={() => setActiveTab('support')}
+                        size="sm"
+                        className={activeTab === 'support' ? 'bg-blue-600' : ''}
+                    >
+                         <MessageSquare size={16} className="mr-1" /> Atendimento
+                    </Button>
                 )}
             </div>
 
@@ -2068,7 +2074,7 @@ export const AdminView = ({ navigate }) => {
                 {activeTab === 'tournaments' && renderTournaments()}
                 {activeTab === 'settings' && renderSettings()}
                 {activeTab === 'withdrawals' && <WithdrawalManager currentAdmin={state.user} />}
-                {activeTab === 'support' && <SupportAdmin currentAdmin={state.user} />}
+                {activeTab === 'support' && canAccessSupport && <SupportAdmin currentAdmin={state.user} />}
             </div>
         </div>
     );

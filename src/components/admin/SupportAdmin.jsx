@@ -141,9 +141,9 @@ const SupportAdmin = ({ currentAdmin }) => {
     );
 
     return (
-        <div className="flex h-[calc(100vh-200px)] gap-4">
+        <div className="flex flex-col md:flex-row h-[calc(100vh-200px)] gap-4">
             {/* Lista de Tickets (Sidebar) */}
-            <Card className="w-1/3 bg-gray-900 border-gray-800 flex flex-col overflow-hidden">
+            <Card className="w-full md:w-1/3 bg-gray-900 border-gray-800 flex flex-col overflow-hidden">
                 <div className="p-4 border-b border-gray-800 bg-gray-900 z-10">
                     <h3 className="font-bold text-white mb-4 flex items-center gap-2">
                         <MessageSquare size={20} className="text-purple-500" />
@@ -234,26 +234,26 @@ const SupportAdmin = ({ currentAdmin }) => {
             </Card>
 
             {/* Área de Chat (Main) */}
-            <Card className="flex-1 bg-gray-900 border-gray-800 flex flex-col overflow-hidden relative">
+            <Card className="w-full md:flex-1 min-w-0 bg-gray-900 border-gray-800 flex flex-col overflow-hidden relative">
                 {selectedTicket ? (
                     <>
                         {/* Header do Chat */}
-                        <div className="p-4 border-b border-gray-800 bg-gray-900 flex justify-between items-center z-10">
-                            <div className="flex items-center gap-3">
+                        <div className="p-4 border-b border-gray-800 bg-gray-900 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 z-10">
+                            <div className="flex items-center gap-3 min-w-0">
                                 <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border border-gray-700">
                                     <User size={20} className="text-gray-400" />
                                 </div>
-                                <div>
-                                    <h3 className="font-bold text-white">{selectedTicket.profiles?.username}</h3>
-                                    <p className="text-xs text-gray-500">{selectedTicket.profiles?.email}</p>
+                                <div className="min-w-0">
+                                    <h3 className="font-bold text-white truncate">{selectedTicket.profiles?.username}</h3>
+                                    <p className="text-xs text-gray-500 truncate">{selectedTicket.profiles?.email}</p>
                                 </div>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2 justify-end">
                                 {selectedTicket.status !== 'closed' && (
                                     <Button 
                                         size="sm" 
                                         variant="outline" 
-                                        className="border-red-500 text-red-500 hover:bg-red-900/20"
+                                        className="border-red-500 text-red-500 hover:bg-red-900/20 whitespace-nowrap"
                                         onClick={() => handleUpdateStatus(selectedTicket.id, 'closed')}
                                     >
                                         <Archive size={16} className="mr-1" /> Encerrar Atendimento
@@ -263,7 +263,7 @@ const SupportAdmin = ({ currentAdmin }) => {
                                     <Button 
                                         size="sm" 
                                         variant="outline" 
-                                        className="border-green-500 text-green-500 hover:bg-green-900/20"
+                                        className="border-green-500 text-green-500 hover:bg-green-900/20 whitespace-nowrap"
                                         onClick={() => handleUpdateStatus(selectedTicket.id, 'in_progress')}
                                     >
                                         <RefreshCw size={16} className="mr-1" /> Reabrir

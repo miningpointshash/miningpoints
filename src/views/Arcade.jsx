@@ -1058,6 +1058,7 @@ export const ArcadeView = () => {
                             userBalance={state.wallet?.mph || 0}
                             isSearching={isSearching}
                             openGames={combinedOpenGames}
+                            botsOnline={Array.isArray(state.bots) ? state.bots.length : 12}
                             isMuted={isMuted}
                             toggleMute={toggleMute}
                             t={t}
@@ -1245,7 +1246,7 @@ export const ArcadeView = () => {
     );
 };
 
-const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSearching, openGames = [], t, isMuted, toggleMute }) => {
+const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSearching, openGames = [], botsOnline = 12, t, isMuted, toggleMute }) => {
     const [customBet, setCustomBet] = useState('');
     const [isPrivate, setIsPrivate] = useState(false);
     const [privatePassword, setPrivatePassword] = useState('');
@@ -1258,11 +1259,11 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
 
             setLobbyStats({
                 totalPaid: Number(totalPaid || 0),
-                onlineUsers: count || 0
+                onlineUsers: (count || 0) + Number(botsOnline || 0)
             });
         };
         fetchLobbyStats();
-    }, []);
+    }, [botsOnline]);
 
     const playClick = () => {
         SoundManager.playSfx('click');
