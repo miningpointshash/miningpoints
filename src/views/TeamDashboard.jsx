@@ -306,6 +306,7 @@ export const TeamDashboard = ({ onBack }) => {
                     <TrendingUp size={20} className="text-pink-500 mb-2" />
                     <span className="text-[10px] text-gray-500 uppercase mb-1">{t('team.pvpFee')}</span>
                     <span className="text-sm font-bold text-white">$ {earnings.pvp.toFixed(2)}</span>
+                    <span className="text-[10px] text-gray-500">{(Number(earnings.pvp || 0) * 100).toFixed(2)} MPH</span>
                 </div>
             </div>
 

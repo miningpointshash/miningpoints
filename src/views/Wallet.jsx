@@ -23,6 +23,14 @@ export const WalletView = ({ navigate }) => {
   const [isPendingPixLoading, setIsPendingPixLoading] = useState(false);
   const [pendingCryptoDeposits, setPendingCryptoDeposits] = useState([]);
   const [isPendingCryptoLoading, setIsPendingCryptoLoading] = useState(false);
+  const [swapHistoryLoading, setSwapHistoryLoading] = useState(false);
+  const [swapHistory, setSwapHistory] = useState([]);
+  const [depositHistoryLoading, setDepositHistoryLoading] = useState(false);
+  const [depositHistory, setDepositHistory] = useState([]);
+  const [withdrawHistoryLoading, setWithdrawHistoryLoading] = useState(false);
+  const [withdrawHistory, setWithdrawHistory] = useState([]);
+  const [transferHistoryLoading, setTransferHistoryLoading] = useState(false);
+  const [transferHistory, setTransferHistory] = useState([]);
 
   // Carregar moedas ativas do banco (via Admin Settings)
   useEffect(() => {
@@ -33,12 +41,137 @@ export const WalletView = ({ navigate }) => {
       // Como não temos endpoint público, vamos manter hardcoded mas preparado para receber props.
   }, []);
 
+  const loadSwapHistory = async () => {
+    if (swapHistoryLoading) return;
+    setSwapHistoryLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('id,type,amount,currency,fee,status,description,created_at')
+        .eq('user_id', userId)
+        .in('type', ['swap_usd_to_mph', 'swap_mph_to_usd'])
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(40);
+
+      if (error) throw error;
+      setSwapHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Erro ao carregar histórico de swaps:', err);
+      addNotification('Falha ao carregar histórico de swaps.', 'danger');
+    } finally {
+      setSwapHistoryLoading(false);
+    }
+  };
+
+  const loadDepositHistory = async () => {
+    if (depositHistoryLoading) return;
+    setDepositHistoryLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      const { data, error } = await supabase
+        .from('deposits')
+        .select('id,method,status,amount_usd,provider_reference,pay_currency,created_at,paid_at,expires_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      if (error) throw error;
+      setDepositHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Erro ao carregar histórico de depósitos:', err);
+      addNotification('Falha ao carregar histórico de depósitos.', 'danger');
+    } finally {
+      setDepositHistoryLoading(false);
+    }
+  };
+
+  const loadWithdrawHistory = async () => {
+    if (withdrawHistoryLoading) return;
+    setWithdrawHistoryLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('id,type,amount,currency,fee,status,description,created_at')
+        .eq('user_id', userId)
+        .eq('type', 'withdrawal')
+        .order('created_at', { ascending: false })
+        .limit(40);
+
+      if (error) throw error;
+      setWithdrawHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Erro ao carregar histórico de saques:', err);
+      addNotification('Falha ao carregar histórico de saques.', 'danger');
+    } finally {
+      setWithdrawHistoryLoading(false);
+    }
+  };
+
+  const loadTransferHistory = async () => {
+    if (transferHistoryLoading) return;
+    setTransferHistoryLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('id,type,amount,currency,fee,status,description,created_at')
+        .eq('user_id', userId)
+        .in('type', ['transfer_in', 'transfer_out'])
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(40);
+
+      if (error) throw error;
+      setTransferHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Erro ao carregar histórico de transferências:', err);
+      addNotification('Falha ao carregar histórico de transferências.', 'danger');
+    } finally {
+      setTransferHistoryLoading(false);
+    }
+  };
+
   useEffect(() => {
     setPixInvoice(null);
     setCryptoInvoice(null);
     setPixPollCount(0);
     setCryptoPollCount(0);
   }, [inputValue]);
+
+  useEffect(() => {
+    if (mode !== 'swap') return;
+    loadSwapHistory();
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'deposit') return;
+    loadDepositHistory();
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'withdraw') return;
+    loadWithdrawHistory();
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'transfer') return;
+    loadTransferHistory();
+  }, [mode]);
 
   const loadPendingPixDeposits = async () => {
     if (isPendingPixLoading) return;
@@ -661,6 +794,47 @@ export const WalletView = ({ navigate }) => {
                     <p>{t('wallet.transfer_user_email')} <span className="text-purple-300">{`${transferUser.trim()}@miningpoints.io`}</span></p>
                   </div>
                 )}
+
+                <div className="mt-4 bg-gray-900 border border-gray-800 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-gray-300 font-semibold">{t('wallet.transfer_history_title')}</div>
+                    <button
+                      type="button"
+                      onClick={loadTransferHistory}
+                      className="text-xs text-purple-300 hover:text-purple-200"
+                      disabled={transferHistoryLoading}
+                    >
+                      {transferHistoryLoading ? t('wallet.transfer_history_loading') : t('wallet.transfer_history_refresh')}
+                    </button>
+                  </div>
+                  {transferHistory.length === 0 ? (
+                    <div className="mt-2 text-[11px] text-gray-400">
+                      {t('wallet.transfer_history_empty')}
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {transferHistory.map((tx) => {
+                        const type = String(tx.type || '');
+                        const amount = Number(tx.amount || 0);
+                        const signed = type === 'transfer_out' ? -Math.abs(amount) : Math.abs(amount);
+                        const label = type === 'transfer_out' ? t('wallet.transfer_history_out') : t('wallet.transfer_history_in');
+                        const when = tx.created_at ? new Date(tx.created_at).toLocaleString() : '';
+                        const signClass = signed >= 0 ? 'text-green-400' : 'text-red-400';
+                        return (
+                          <div key={tx.id} className="flex items-center justify-between gap-2 bg-black/40 border border-gray-800 rounded p-2">
+                            <div className="min-w-0">
+                              <div className="text-[11px] text-gray-200 truncate">{label}</div>
+                              <div className="text-[10px] text-gray-500 truncate">{when}</div>
+                            </div>
+                            <div className={`text-[11px] font-mono font-bold ${signClass} whitespace-nowrap`}>
+                              {signed >= 0 ? '+' : '-'}${Math.abs(signed).toFixed(2)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -703,6 +877,60 @@ export const WalletView = ({ navigate }) => {
                     }
                     return ` +${(v * 100).toFixed(0)} MPH`;
                   })()}
+                </div>
+
+                <div className="mt-4 bg-gray-900 border border-gray-800 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-gray-300 font-semibold">{t('wallet.swap_history_title')}</div>
+                    <button
+                      type="button"
+                      onClick={loadSwapHistory}
+                      className="text-xs text-purple-300 hover:text-purple-200"
+                      disabled={swapHistoryLoading}
+                    >
+                      {swapHistoryLoading ? t('wallet.swap_history_loading') : t('wallet.swap_history_refresh')}
+                    </button>
+                  </div>
+                  {swapHistory.length === 0 ? (
+                    <div className="mt-2 text-[11px] text-gray-400">
+                      {t('wallet.swap_history_empty')}
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {swapHistory.map((tx) => {
+                        const type = String(tx.type || '');
+                        const currency = String(tx.currency || '');
+                        const amount = Number(tx.amount || 0);
+                        const fee = Number(tx.fee || 0);
+                        const label = type === 'swap_usd_to_mph'
+                          ? 'USD → MPH'
+                          : type === 'swap_mph_to_usd'
+                            ? 'MPH → USD'
+                            : type;
+
+                        const amountText = currency === 'USD'
+                          ? `${amount >= 0 ? '+' : ''}$${Math.abs(amount).toFixed(2)}`
+                          : `${amount >= 0 ? '+' : ''}${Math.abs(amount).toFixed(2)} MPH`;
+
+                        const signClass = amount >= 0 ? 'text-green-400' : 'text-red-400';
+                        const when = tx.created_at ? new Date(tx.created_at).toLocaleString('pt-BR') : '';
+
+                        return (
+                          <div key={tx.id} className="flex items-center justify-between gap-2 bg-black/40 border border-gray-800 rounded p-2">
+                            <div className="min-w-0">
+                              <div className="text-[11px] text-gray-200 truncate">{label}</div>
+                              <div className="text-[10px] text-gray-500 truncate">
+                                {when}{fee > 0 ? ` • Burn: -${fee.toFixed(2)} MPH` : ''}
+                              </div>
+                            </div>
+                            <div className={`text-[11px] font-mono font-bold ${signClass} whitespace-nowrap`}>
+                              {amountText}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -877,6 +1105,49 @@ export const WalletView = ({ navigate }) => {
                     )}
                   </div>
                 )}
+
+                <div className="mt-3 bg-gray-900 border border-gray-800 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-gray-300 font-semibold">{t('wallet.deposit_history_title')}</div>
+                    <button
+                      type="button"
+                      onClick={loadDepositHistory}
+                      className="text-xs text-purple-300 hover:text-purple-200"
+                      disabled={depositHistoryLoading}
+                    >
+                      {depositHistoryLoading ? t('wallet.deposit_history_loading') : t('wallet.deposit_history_refresh')}
+                    </button>
+                  </div>
+                  {depositHistory.length === 0 ? (
+                    <div className="mt-2 text-[11px] text-gray-400">
+                      {t('wallet.deposit_history_empty')}
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {depositHistory.map((d) => {
+                        const method = String(d.method || '').toUpperCase();
+                        const status = String(d.status || '');
+                        const usd = Number(d.amount_usd || 0);
+                        const when = d.created_at ? new Date(d.created_at).toLocaleString() : '';
+                        const statusClass = status === 'paid' ? 'text-green-400' : status === 'pending' ? 'text-yellow-400' : 'text-gray-400';
+                        const ref = d.provider_reference ? String(d.provider_reference).slice(0, 10) : '';
+                        return (
+                          <div key={d.id} className="flex items-center justify-between gap-2 bg-black/40 border border-gray-800 rounded p-2">
+                            <div className="min-w-0">
+                              <div className="text-[11px] text-gray-200 truncate">{method}{ref ? ` • ${ref}` : ''}</div>
+                              <div className="text-[10px] text-gray-500 truncate">
+                                <span className={statusClass}>{status}</span>{when ? ` • ${when}` : ''}
+                              </div>
+                            </div>
+                            <div className="text-[11px] font-mono font-bold text-green-400 whitespace-nowrap">
+                              +${usd.toFixed(2)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 {selectedCrypto === 'pix' ? (
                     pixInvoice && (
                     <div className="mt-2 p-2 bg-white rounded text-center animate-fadeIn">
@@ -1046,6 +1317,48 @@ export const WalletView = ({ navigate }) => {
                   <p className="text-[11px] text-yellow-400 mt-1">
                     {t('wallet.financial_password_hint')}
                   </p>
+                )}
+              </div>
+
+              <div className="mt-2 bg-gray-900 border border-gray-800 rounded-lg p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-gray-300 font-semibold">{t('wallet.withdraw_history_title')}</div>
+                  <button
+                    type="button"
+                    onClick={loadWithdrawHistory}
+                    className="text-xs text-purple-300 hover:text-purple-200"
+                    disabled={withdrawHistoryLoading}
+                  >
+                    {withdrawHistoryLoading ? t('wallet.withdraw_history_loading') : t('wallet.withdraw_history_refresh')}
+                  </button>
+                </div>
+                {withdrawHistory.length === 0 ? (
+                  <div className="mt-2 text-[11px] text-gray-400">
+                    {t('wallet.withdraw_history_empty')}
+                  </div>
+                ) : (
+                  <div className="mt-2 space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {withdrawHistory.map((tx) => {
+                      const amount = Number(tx.amount || 0);
+                      const fee = Number(tx.fee || 0);
+                      const status = String(tx.status || '');
+                      const when = tx.created_at ? new Date(tx.created_at).toLocaleString() : '';
+                      const statusClass = status === 'completed' ? 'text-green-400' : status === 'pending' ? 'text-yellow-400' : status === 'rejected' ? 'text-red-400' : 'text-gray-400';
+                      return (
+                        <div key={tx.id} className="flex items-center justify-between gap-2 bg-black/40 border border-gray-800 rounded p-2">
+                          <div className="min-w-0">
+                            <div className="text-[11px] text-gray-200 truncate">{t('wallet.withdraw_history_item')}</div>
+                            <div className="text-[10px] text-gray-500 truncate">
+                              <span className={statusClass}>{status}</span>{when ? ` • ${when}` : ''}{fee > 0 ? ` • Fee: $${fee.toFixed(2)}` : ''}
+                            </div>
+                          </div>
+                          <div className="text-[11px] font-mono font-bold text-red-400 whitespace-nowrap">
+                            -${amount.toFixed(2)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </div>

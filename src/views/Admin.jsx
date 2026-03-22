@@ -18,6 +18,9 @@ const NetworkViewer = ({ userId, username, onClose }) => {
     const [networkData, setNetworkData] = useState([]);
     const [expandedLevel, setExpandedLevel] = useState(1);
     const [earnings, setEarnings] = useState({ total: 0, direct: 0, residual: 0, pvp: 0 });
+    const [pvpTxLoading, setPvpTxLoading] = useState(false);
+    const [pvpTxRows, setPvpTxRows] = useState([]);
+    const [pvpLevelFilter, setPvpLevelFilter] = useState('all');
 
     useEffect(() => {
         const fetchData = async () => {
@@ -44,10 +47,49 @@ const NetworkViewer = ({ userId, username, onClose }) => {
                         pvp: earnData[0].pvp_earnings || 0
                     });
                 }
+
+                setPvpTxLoading(true);
+                const { data: txData, error: txError } = await supabase
+                    .from('transactions')
+                    .select('id,amount,currency,status,description,origin_user_id,commission_level,created_at')
+                    .eq('user_id', userId)
+                    .eq('type', 'unilevel_bonus')
+                    .eq('currency', 'MPH')
+                    .eq('status', 'completed')
+                    .ilike('description', '%pvp%')
+                    .order('created_at', { ascending: false })
+                    .limit(80);
+
+                if (txError) throw txError;
+
+                const originIds = Array.from(
+                    new Set((txData || []).map((r) => r.origin_user_id).filter(Boolean))
+                );
+
+                let originMap = {};
+                if (originIds.length > 0) {
+                    const { data: originProfiles, error: originError } = await supabase
+                        .from('profiles')
+                        .select('id,username,email')
+                        .in('id', originIds);
+                    if (!originError && Array.isArray(originProfiles)) {
+                        originMap = originProfiles.reduce((acc, p) => {
+                            acc[p.id] = p;
+                            return acc;
+                        }, {});
+                    }
+                }
+
+                const rows = (txData || []).map((r) => ({
+                    ...r,
+                    origin: r.origin_user_id ? originMap[r.origin_user_id] : null
+                }));
+                setPvpTxRows(rows);
             } catch (error) {
                 console.error("Erro ao carregar rede:", error);
             } finally {
                 setLoading(false);
+                setPvpTxLoading(false);
             }
         };
         fetchData();
@@ -98,8 +140,59 @@ const NetworkViewer = ({ userId, username, onClose }) => {
                                 <Card className="bg-gray-800 border-gray-700 p-3 text-center">
                                     <p className="text-[10px] text-gray-400 uppercase">PVP</p>
                                     <p className="text-lg font-bold text-pink-400">${earnings.pvp.toFixed(2)}</p>
+                                    <p className="text-[10px] text-gray-500">{(Number(earnings.pvp || 0) * 100).toFixed(2)} MPH</p>
                                 </Card>
                             </div>
+
+                            <Card className="bg-gray-800/40 border-gray-700 p-4">
+                                <div className="flex items-center justify-between gap-3 mb-3">
+                                    <div className="text-sm font-bold text-white">Ganhos PvP (linha a linha)</div>
+                                    <select
+                                        value={pvpLevelFilter}
+                                        onChange={(e) => setPvpLevelFilter(e.target.value)}
+                                        className="bg-black border border-gray-700 rounded px-2 py-1 text-xs text-white outline-none"
+                                    >
+                                        <option value="all">Todos níveis</option>
+                                        {[1, 2, 3, 4, 5, 6, 7].map((lvl) => (
+                                            <option key={lvl} value={String(lvl)}>Nível {lvl}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {pvpTxLoading ? (
+                                    <div className="text-center text-gray-500 text-sm py-6">Carregando PvP...</div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {(pvpTxRows || [])
+                                            .filter((r) => pvpLevelFilter === 'all' || String(r.commission_level) === String(pvpLevelFilter))
+                                            .slice(0, 50)
+                                            .map((r) => {
+                                                const mph = Number(r.amount || 0);
+                                                const points = mph / 100;
+                                                const originLabel = r.origin?.username || (r.origin?.email || (r.origin_user_id ? String(r.origin_user_id).slice(0, 8) : '—'));
+                                                const lvl = Number(r.commission_level || 0);
+                                                return (
+                                                    <div key={r.id} className="bg-black/40 border border-gray-800 rounded-lg p-3 flex items-center justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <div className="text-xs text-gray-300 font-bold truncate">Origem: {originLabel}</div>
+                                                            <div className="text-[10px] text-gray-500">
+                                                                Nível: <span className="text-gray-300 font-mono">{lvl || '-'}</span>
+                                                                {' • '}
+                                                                {new Date(r.created_at).toLocaleString()}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-xs font-mono font-bold text-pink-400">+{mph.toFixed(2)} MPH</div>
+                                                            <div className="text-[10px] text-gray-500">$ {points.toFixed(2)}</div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        {(!pvpTxRows || pvpTxRows.length === 0) && (
+                                            <div className="text-center text-gray-500 text-sm py-6">Nenhum ganho PvP encontrado.</div>
+                                        )}
+                                    </div>
+                                )}
+                            </Card>
 
                             {/* Árvore de Rede */}
                             <div className="space-y-2">
