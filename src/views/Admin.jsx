@@ -872,7 +872,7 @@ export const AdminView = ({ navigate }) => {
             // fetchUsers(); // Opcional, mas mantido para garantir sincronia eventual
         } catch (error) {
             console.error('Erro ao atualizar usuário:', error);
-            addNotification('Falha ao atualizar usuário.', 'danger');
+            addNotification(error?.message || 'Falha ao atualizar usuário.', 'danger');
         }
     };
 
@@ -1155,7 +1155,13 @@ export const AdminView = ({ navigate }) => {
             </div>
 
             <div className="space-y-3 pb-20">
-                {users.filter(u => u.username?.toLowerCase().includes(searchTerm.toLowerCase())).map(user => (
+                {users.filter((u) => {
+                    const q = String(searchTerm || '').trim().toLowerCase();
+                    if (!q) return true;
+                    const username = String(u.username || '').toLowerCase();
+                    const email = String(u.email || '').toLowerCase();
+                    return username.includes(q) || email.includes(q);
+                }).map(user => (
                     <Card key={user.id} className="bg-gray-900/50 border-gray-800 p-4">
                         <div className="flex justify-between items-start mb-3">
                             <div>
