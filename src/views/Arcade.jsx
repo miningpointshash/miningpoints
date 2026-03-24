@@ -265,6 +265,25 @@ export const ArcadeView = () => {
         return `[Duelo #${short}]`;
     };
 
+    const getDuelMeta = async (roomId) => {
+        const clean = extractUuid(roomId);
+        if (!clean) return null;
+        try {
+            const { data, error } = await supabase
+                .from('forum_messages')
+                .select('duel_password, duel_bet_amount_mph, duel_game_type')
+                .eq('duel_room_id', clean)
+                .eq('is_duel_invite', true)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            if (error) throw error;
+            return data || null;
+        } catch {
+            return null;
+        }
+    };
+
     const extractUuid = (value) => {
         const s = String(value || '').trim();
         const m = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
@@ -403,15 +422,18 @@ export const ArcadeView = () => {
                             .eq('id', cleanRoom)
                             .maybeSingle();
 
-                        // Mensagem automática no Fórum para o criador (feedback de aceite)
                         try {
                             if (roomAfter?.creator_id && state?.user?.id && roomAfter?.id) {
+                                const meta = await getDuelMeta(roomAfter.id);
                                 await supabase.from('forum_messages').insert([{
                                     sender_id: state.user.id,
                                     receiver_id: roomAfter.creator_id,
-                                    content: `${state?.user?.username || 'Oponente'} aceitou o duelo de ${Number(roomAfter.bet_amount_mph || 0)} MPH! Entrando na sala...`,
+                                    content: `${state?.user?.username || 'Oponente'} aceitou o duelo de ${Number(roomAfter.bet_amount_mph || 0)} MPH! Entrando na sala... ${duelTag(roomAfter.id)}`,
                                     is_duel_invite: false,
-                                    duel_room_id: roomAfter.id
+                                    duel_room_id: roomAfter.id,
+                                    duel_password: meta?.duel_password || null,
+                                    duel_bet_amount_mph: meta?.duel_bet_amount_mph || roomAfter.bet_amount_mph || null,
+                                    duel_game_type: meta?.duel_game_type || roomAfter.game_type || null
                                 }]);
                             }
                         } catch {}
@@ -534,15 +556,18 @@ export const ArcadeView = () => {
                 .eq('id', roomId)
                 .maybeSingle();
 
-            // Mensagem automática no Fórum para o criador (feedback de aceite)
             try {
                 if (room?.creator_id && state?.user?.id && room?.id) {
+                    const meta = await getDuelMeta(room.id);
                     await supabase.from('forum_messages').insert([{
                         sender_id: state.user.id,
                         receiver_id: room.creator_id,
                         content: `${state?.user?.username || 'Oponente'} aceitou o duelo de ${Number(room.bet_amount_mph || 0)} MPH! Entrando na sala... ${duelTag(room.id)}`,
                         is_duel_invite: false,
-                        duel_room_id: room.id
+                        duel_room_id: room.id,
+                        duel_password: meta?.duel_password || null,
+                        duel_bet_amount_mph: meta?.duel_bet_amount_mph || room.bet_amount_mph || null,
+                        duel_game_type: meta?.duel_game_type || room.game_type || null
                     }]);
                 }
             } catch {}
@@ -733,14 +758,20 @@ export const ArcadeView = () => {
             if (shouldCloseThisTime) {
                 writePvpTimeoutMeta(1);
                 addNotification(t('arcade.noHumanFound'), 'info');
-                // Mensagem automática para si mesmo
                 try {
-                    supabase.from('forum_messages').insert([{
-                        sender_id: state.user.id,
-                        receiver_id: state.user.id,
-                        content: `Nenhum humano encontrado. Sala encerrada. ${duelTag(pvpConfig.roomId || pvpConfig.gameId || '')}`,
-                        is_duel_invite: false
-                    }]).then(() => {}).catch(() => {});
+                        const rid = extractUuid(pvpConfig.roomId || pvpConfig.gameId || '');
+                        getDuelMeta(rid).then((meta) => {
+                            supabase.from('forum_messages').insert([{
+                                sender_id: state.user.id,
+                                receiver_id: state.user.id,
+                                content: `Nenhum humano encontrado. Sala encerrada. ${duelTag(rid)}`,
+                                is_duel_invite: false,
+                                duel_room_id: rid || null,
+                                duel_password: meta?.duel_password || null,
+                                duel_bet_amount_mph: meta?.duel_bet_amount_mph || null,
+                                duel_game_type: meta?.duel_game_type || null
+                            }]).then(() => {}).catch(() => {});
+                        }).catch(() => {});
                 } catch {}
                 setPvpState('lobby');
             } else {
@@ -776,17 +807,20 @@ export const ArcadeView = () => {
                             .eq('id', roomId)
                             .maybeSingle();
                         if (room?.id && room.status === 'matched' && room.opponent_id) {
-                            // Mensagem automática:“já dentro da sala”
                             try {
                                 const isCreator = state?.user?.id === room.creator_id;
                                 const receiverId = isCreator ? room.opponent_id : room.creator_id;
                                 if (receiverId) {
+                                    const meta = await getDuelMeta(room.id);
                                     await supabase.from('forum_messages').insert([{
                                         sender_id: state.user.id,
                                         receiver_id: receiverId,
-                                    content: `${state?.user?.username || 'Jogador'} já está na sala. Boa partida! ${duelTag(room.id)}`,
+                                        content: `${state?.user?.username || 'Jogador'} já está na sala. Boa partida! ${duelTag(room.id)}`,
                                         is_duel_invite: false,
-                                        duel_room_id: room.id
+                                        duel_room_id: room.id,
+                                        duel_password: meta?.duel_password || null,
+                                        duel_bet_amount_mph: meta?.duel_bet_amount_mph || room.bet_amount_mph || null,
+                                        duel_game_type: meta?.duel_game_type || room.game_type || null
                                     }]);
                                 }
                             } catch {}
@@ -794,14 +828,17 @@ export const ArcadeView = () => {
                         }
                     }
                     if (updated?.status === 'cancelled') {
-                        // Feedback automático: sala encerrada
                         try {
+                            const meta = await getDuelMeta(roomId);
                             await supabase.from('forum_messages').insert([{
                                 sender_id: state.user.id,
                                 receiver_id: state.user.id,
                                 content: `Nenhum humano encontrado. Sala encerrada e reembolsada. ${duelTag(roomId)}`,
                                 is_duel_invite: false,
-                                duel_room_id: roomId
+                                duel_room_id: roomId,
+                                duel_password: meta?.duel_password || null,
+                                duel_bet_amount_mph: meta?.duel_bet_amount_mph || null,
+                                duel_game_type: meta?.duel_game_type || null
                             }]);
                         } catch {}
                         clearActivePvpRoomId();
@@ -890,6 +927,7 @@ export const ArcadeView = () => {
                 // Mensagens automáticas de resultado no Fórum
                 try {
                     const otherId = selfIsCreator ? room.opponent_id : room.creator_id;
+                    const meta = await getDuelMeta(roomId);
                     // Buscar nomes de ambos para compor o placar legível
                     let creatorName = 'Criador';
                     let opponentName = 'Oponente';
@@ -920,7 +958,10 @@ export const ArcadeView = () => {
                             receiver_id: otherId,
                             content: `${commonContent} ${duelTag(roomId)}`,
                             is_duel_invite: false,
-                            duel_room_id: roomId
+                            duel_room_id: roomId,
+                            duel_password: meta?.duel_password || null,
+                            duel_bet_amount_mph: meta?.duel_bet_amount_mph || room.bet_amount_mph || null,
+                            duel_game_type: meta?.duel_game_type || room.game_type || null
                         });
                     }
                     rows.push({
@@ -928,7 +969,10 @@ export const ArcadeView = () => {
                         receiver_id: state.user.id,
                         content: `${commonContent} ${duelTag(roomId)}`,
                         is_duel_invite: false,
-                        duel_room_id: roomId
+                        duel_room_id: roomId,
+                        duel_password: meta?.duel_password || null,
+                        duel_bet_amount_mph: meta?.duel_bet_amount_mph || room.bet_amount_mph || null,
+                        duel_game_type: meta?.duel_game_type || room.game_type || null
                     });
                     if (rows.length > 0) {
                         await supabase.from('forum_messages').insert(rows);

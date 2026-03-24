@@ -43,6 +43,7 @@ export const ForumView = ({ navigate }) => {
 
     // Challenge
     const [betAmount, setBetAmount] = useState(100);
+    const [duelGameType, setDuelGameType] = useState('twelve_doors');
 
     const [loading, setLoading] = useState(false);
 
@@ -458,9 +459,8 @@ export const ForumView = ({ navigate }) => {
         try {
             const password = String(Math.floor(100000 + Math.random() * 900000));
 
-            // Create a PVP room first (private)
             const { data: rpcData, error: rpcError } = await supabase.rpc('create_pvp_room', {
-                p_game_type: '12doors',
+                p_game_type: duelGameType,
                 p_bet_amount_mph: betAmount,
                 p_creator_avatar: state.user.avatar_url || 'mp_p1',
                 p_is_private: true,
@@ -472,6 +472,7 @@ export const ForumView = ({ navigate }) => {
 
             const roomId = rpcData.room_id;
             const duelTag = `[Duelo #${String(roomId).slice(0,8)}]`;
+            const duelGameLabel = duelGameType === 'hash_harvest' ? 'Hash Harvest' : '12 Doors';
             if (rpcData?.balance_mph !== undefined) {
                 setState(prev => ({
                     ...prev,
@@ -482,16 +483,15 @@ export const ForumView = ({ navigate }) => {
                 }));
             }
 
-            // Send invite message
             const msg = {
                 sender_id: state.user.id,
                 receiver_id: selectedContact.id,
-                content: `Te desafiou para um duelo de ${betAmount} MPH! ${duelTag}`,
+                content: `Te desafiou para um duelo de ${betAmount} MPH no ${duelGameLabel}! ${duelTag}`,
                 is_duel_invite: true,
                 duel_room_id: roomId,
                 duel_password: password,
                 duel_bet_amount_mph: betAmount,
-                duel_game_type: '12doors'
+                duel_game_type: duelGameType
             };
             const { data, error } = await supabase.from('forum_messages').insert([msg]).select().single();
             if (error) throw error;
@@ -851,7 +851,7 @@ export const ForumView = ({ navigate }) => {
                                             {!msg.is_duel_invite && msg.duel_room_id && (
                                                 <div className="mt-2 flex gap-2">
                                                     <button
-                                                        onClick={() => openArcadeRoom(msg.duel_room_id, msg.duel_password || '', true)}
+                                                        onClick={() => openArcadeRoom(msg.duel_room_id, msg.duel_password || '', Boolean(msg.duel_password))}
                                                         className="flex-1 bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded"
                                                         title="Abrir duelo"
                                                     >
@@ -859,7 +859,7 @@ export const ForumView = ({ navigate }) => {
                                                     </button>
                                                     <button
                                                         onClick={() => {
-                                                            const link = buildDuelLink(msg.duel_room_id, msg.duel_password || '', true);
+                                                            const link = buildDuelLink(msg.duel_room_id, msg.duel_password || '', Boolean(msg.duel_password));
                                                             navigator.clipboard.writeText(link);
                                                             addNotification('Link do duelo copiado!', 'success');
                                                         }}
@@ -895,7 +895,22 @@ export const ForumView = ({ navigate }) => {
                             <img src={getAvatarSrc(selectedContact.avatar_url)} alt="avatar" className="w-full h-full object-cover" />
                         </div>
                         <h2 className="text-xl font-bold mb-2">Desafiar {selectedContact.username}</h2>
-                        <p className="text-sm text-gray-400 mb-6">Escolha o valor da aposta para criar uma sala privada de 12 Doors.</p>
+                        <p className="text-sm text-gray-400 mb-4">Escolha o jogo e o valor da aposta. A senha é automática para garantir que só o convidado entre.</p>
+
+                        <div className="grid grid-cols-2 gap-3 mb-6">
+                            <button
+                                onClick={() => setDuelGameType('twelve_doors')}
+                                className={`p-3 rounded-xl border font-bold text-sm transition-all ${duelGameType === 'twelve_doors' ? 'bg-purple-900/50 border-purple-500 text-white' : 'bg-gray-950 border-gray-700 text-gray-400 hover:border-gray-500'}`}
+                            >
+                                12 Doors
+                            </button>
+                            <button
+                                onClick={() => setDuelGameType('hash_harvest')}
+                                className={`p-3 rounded-xl border font-bold text-sm transition-all ${duelGameType === 'hash_harvest' ? 'bg-purple-900/50 border-purple-500 text-white' : 'bg-gray-950 border-gray-700 text-gray-400 hover:border-gray-500'}`}
+                            >
+                                Hash Harvest
+                            </button>
+                        </div>
                         
                         <div className="mb-6">
                             <label className="block text-xs font-bold text-gray-400 mb-2">{t('forum.betAmount', 'Aposta (MPH)')}</label>
