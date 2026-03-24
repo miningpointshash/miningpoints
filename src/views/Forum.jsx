@@ -40,6 +40,7 @@ export const ForumView = ({ navigate }) => {
     const [newChatMessage, setNewChatMessage] = useState('');
     const contactsRef = useRef([]);
     const [isSendingChallenge, setIsSendingChallenge] = useState(false);
+    const [duelRoomStatusById, setDuelRoomStatusById] = useState({});
 
     // Challenge
     const [betAmount, setBetAmount] = useState(100);
@@ -418,7 +419,9 @@ export const ForumView = ({ navigate }) => {
                 .or(`and(sender_id.eq.${state.user.id},receiver_id.eq.${contactId}),and(sender_id.eq.${contactId},receiver_id.eq.${state.user.id})`)
                 .order('created_at', { ascending: true });
             if (error) throw error;
-            setChatMessages(data || []);
+            const rows = data || [];
+            setChatMessages(rows);
+            await primeDuelRoomStatusCache(rows);
             
             // Mark as read
             await supabase.from('forum_messages')
@@ -477,6 +480,7 @@ export const ForumView = ({ navigate }) => {
             const roomId = rpcData.room_id;
             const duelTag = `[Duelo #${String(roomId).slice(0,8)}]`;
             const duelGameLabel = duelGameType === 'hash_harvest' ? 'Hash Harvest' : '12 Doors';
+            setDuelRoomStatusById(prev => ({ ...prev, [roomId]: 'open' }));
             if (rpcData?.balance_mph !== undefined) {
                 setState(prev => ({
                     ...prev,
@@ -514,6 +518,32 @@ export const ForumView = ({ navigate }) => {
 
     const handleAcceptDuel = async (roomId, password) => {
         openArcadeRoom(roomId, password || '', true);
+    };
+
+    const primeDuelRoomStatusCache = async (messages) => {
+        const myId = state?.user?.id;
+        if (!myId) return;
+        const ids = (messages || [])
+            .filter(m => m?.is_duel_invite && m?.sender_id === myId && m?.duel_room_id)
+            .map(m => m.duel_room_id);
+        const unique = Array.from(new Set(ids.map(x => String(x)))).filter(Boolean);
+        const missing = unique.filter(id => duelRoomStatusById?.[id] === undefined);
+        if (missing.length === 0) return;
+
+        try {
+            const { data, error } = await supabase
+                .from('pvp_rooms')
+                .select('id,status')
+                .in('id', missing);
+            if (error) throw error;
+            const next = (data || []).reduce((acc, r) => {
+                if (r?.id) acc[String(r.id)] = r.status;
+                return acc;
+            }, {});
+            setDuelRoomStatusById(prev => ({ ...prev, ...next }));
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     const handleReport = async () => {
@@ -832,6 +862,25 @@ export const ForumView = ({ navigate }) => {
                                                             <Swords size={12} /> {t('forum.acceptDuel', 'Aceitar Duelo')}
                                                         </button>
                                                     )}
+                                                    {!isMe && (
+                                                        <button
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await supabase.from('forum_messages').insert([{
+                                                                        sender_id: state.user.id,
+                                                                        receiver_id: selectedContact.id,
+                                                                        content: `${state.user.username} recusou o duelo.`,
+                                                                        is_duel_invite: false,
+                                                                        duel_room_id: msg.duel_room_id || null
+                                                                    }]);
+                                                                    addNotification('Desafio rejeitado.', 'info');
+                                                                } catch {}
+                                                            }}
+                                                            className="w-full bg-black/40 border border-gray-700 hover:border-gray-500 text-gray-300 text-xs font-bold py-2 rounded"
+                                                        >
+                                                            REJEITAR DESAFIO
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => {
                                                             const link = buildDuelLink(msg.duel_room_id, msg.duel_password, true);
@@ -848,6 +897,41 @@ export const ForumView = ({ navigate }) => {
                                                             className="w-full bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded flex items-center justify-center gap-1"
                                                         >
                                                             ABRIR SALA (AGUARDAR)
+                                                        </button>
+                                                    )}
+                                                    {isMe && duelRoomStatusById?.[String(msg.duel_room_id)] === 'open' && (
+                                                        <button
+                                                            onClick={async () => {
+                                                                if (!window.confirm('Cancelar este desafio e reembolsar a aposta?')) return;
+                                                                try {
+                                                                    const { data, error } = await supabase.rpc('cancel_pvp_room', { p_room_id: msg.duel_room_id });
+                                                                    if (error) throw error;
+                                                                    if (data?.balance_mph !== undefined) {
+                                                                        setState(prev => ({
+                                                                            ...prev,
+                                                                            wallet: {
+                                                                                ...prev.wallet,
+                                                                                mph: Number(data.balance_mph || prev.wallet.mph || 0)
+                                                                            }
+                                                                        }));
+                                                                    }
+                                                                    setDuelRoomStatusById(prev => ({ ...prev, [String(msg.duel_room_id)]: 'cancelled' }));
+                                                                    await supabase.from('forum_messages').insert([{
+                                                                        sender_id: state.user.id,
+                                                                        receiver_id: selectedContact.id,
+                                                                        content: `${state.user.username} cancelou o duelo e foi reembolsado. [Duelo #${String(msg.duel_room_id).slice(0, 8)}]`,
+                                                                        is_duel_invite: false,
+                                                                        duel_room_id: msg.duel_room_id || null
+                                                                    }]);
+                                                                    addNotification('Desafio cancelado e reembolsado.', 'success');
+                                                                } catch (e) {
+                                                                    console.error(e);
+                                                                    addNotification('Não foi possível cancelar (talvez já tenha sido aceito/encerrado).', 'danger');
+                                                                }
+                                                            }}
+                                                            className="w-full bg-red-900/30 border border-red-700/50 hover:border-red-500 text-red-300 text-xs font-bold py-2 rounded"
+                                                        >
+                                                            CANCELAR DESAFIO (REEMBOLSAR)
                                                         </button>
                                                     )}
                                                 </div>

@@ -394,13 +394,28 @@ export const ArcadeView = () => {
                 }
 
                 if (dbRoom?.id && dbRoom.creator_id === myId) {
-                    setPvpConfig(prev => ({
-                        ...prev,
-                        roomPassword: pwd || prev.roomPassword || ''
-                    }));
-                    applyPrivateRoomOpen(dbRoom);
-                    setShowJoinModal(false);
-                    return;
+                    if (dbRoom.status === 'open') {
+                        setPvpConfig(prev => ({
+                            ...prev,
+                            roomPassword: pwd || prev.roomPassword || ''
+                        }));
+                        applyPrivateRoomOpen(dbRoom);
+                        setShowJoinModal(false);
+                        return;
+                    }
+                    if (dbRoom.status === 'matched') {
+                        await applyPrivateRoomMatched(dbRoom);
+                        setShowJoinModal(false);
+                        clearRoomFromUrl();
+                        return;
+                    }
+                    if (dbRoom.status === 'completed' || dbRoom.status === 'cancelled') {
+                        clearActivePvpRoomId();
+                        clearRoomFromUrl();
+                        addNotification('Sala finalizada/cancelada. Nenhuma ação necessária.', 'info');
+                        setPvpView('lobby');
+                        return;
+                    }
                 }
 
                 setPendingRoomId(cleanRoom);
@@ -1310,7 +1325,10 @@ export const ArcadeView = () => {
                             userBalance={state.wallet?.mph || 0}
                             isSearching={isSearching}
                             openGames={combinedOpenGames}
-                            botsOnline={Array.isArray(state.bots) ? state.bots.length : 12}
+                            botsOnline={(() => {
+                                const active = (state.bots || []).filter(b => b.active);
+                                return Math.min(12, active.length || 0);
+                            })()}
                             isMuted={isMuted}
                             toggleMute={toggleMute}
                             t={t}
@@ -1507,11 +1525,11 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
     useEffect(() => {
         const fetchLobbyStats = async () => {
             const { data: totalPaid } = await supabase.rpc('get_arcade_total_paid');
-            const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-
+            const botOnline = Number(botsOnline || 0);
+            const represented = botOnline * 5; // cada bot representa 5 contas
             setLobbyStats({
                 totalPaid: Number(totalPaid || 0),
-                onlineUsers: (count || 0) + Number(botsOnline || 0)
+                onlineUsers: represented
             });
         };
         fetchLobbyStats();
