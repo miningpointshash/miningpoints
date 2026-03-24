@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { AppContext } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import { ChevronLeft, MessageSquare, ThumbsUp, ThumbsDown, MessageCircle, Send, Swords, Search, User, AlertTriangle, X } from 'lucide-react';
@@ -25,6 +25,8 @@ export const ForumView = ({ navigate }) => {
     const [selectedTopic, setSelectedTopic] = useState(null);
     const [comments, setComments] = useState([]);
     const [likedTopicMap, setLikedTopicMap] = useState({});
+    const [unreadBySender, setUnreadBySender] = useState({});
+    const [unreadTotal, setUnreadTotal] = useState(0);
     
     // Forms
     const [newTitle, setNewTitle] = useState('');
@@ -36,6 +38,7 @@ export const ForumView = ({ navigate }) => {
     const [selectedContact, setSelectedContact] = useState(null);
     const [chatMessages, setChatMessages] = useState([]);
     const [newChatMessage, setNewChatMessage] = useState('');
+    const contactsRef = useRef([]);
 
     // Challenge
     const [betAmount, setBetAmount] = useState(100);
@@ -47,6 +50,7 @@ export const ForumView = ({ navigate }) => {
             fetchTopics();
         } else if (activeTab === 'messages' && viewMode === 'list') {
             fetchContacts();
+            fetchUnreadCounts();
         }
     }, [activeTab, viewMode]);
 
@@ -79,6 +83,90 @@ export const ForumView = ({ navigate }) => {
     const ADMIN_ROLES = ['admin_master', 'admin_finance'];
     const isAuditor = ADMIN_ROLES.includes(state?.user?.role);
     const HIDE_ADMIN = !isAuditor;
+
+    useEffect(() => {
+        contactsRef.current = contacts || [];
+    }, [contacts]);
+
+    useEffect(() => {
+        const myId = state?.user?.id;
+        if (!myId) return;
+
+        const channel = supabase
+            .channel(`forum_inbox_${myId}`)
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'forum_messages',
+                filter: `receiver_id=eq.${myId}`
+            }, async (payload) => {
+                const msg = payload?.new;
+                if (!msg?.id || !msg?.sender_id) return;
+
+                const senderId = msg.sender_id;
+                const inChat = viewMode === 'chat' && selectedContact?.id === senderId;
+
+                if (inChat) {
+                    setChatMessages(prev => {
+                        const exists = (prev || []).some(m => m.id === msg.id);
+                        if (exists) return prev;
+                        return [...(prev || []), msg];
+                    });
+                    await supabase.from('forum_messages')
+                        .update({ is_read: true })
+                        .eq('id', msg.id);
+                    return;
+                }
+
+                setUnreadBySender(prev => ({ ...prev, [senderId]: Number(prev?.[senderId] || 0) + 1 }));
+                setUnreadTotal(prev => Number(prev || 0) + 1);
+
+                if (msg.is_duel_invite) {
+                    let senderName = '';
+                    const existing = (contactsRef.current || []).find(c => c.id === senderId);
+                    if (existing?.username) senderName = existing.username;
+
+                    if (!senderName) {
+                        const { data: p } = await supabase
+                            .from('profiles')
+                            .select('id,username,avatar_url,role')
+                            .eq('id', senderId)
+                            .maybeSingle();
+                        if (p?.role && HIDE_ADMIN && ADMIN_ROLES.includes(p.role)) return;
+                        if (p?.username) senderName = p.username;
+                        if (p?.id) {
+                            setContacts(prev => {
+                                const next = (prev || []).filter(x => x.id !== p.id);
+                                return [p, ...next];
+                            });
+                        }
+                    }
+
+                    addNotification(`Convite de duelo de ${senderName || 'usuário'}!`, 'game');
+                } else {
+                    const existing = (contactsRef.current || []).find(c => c.id === senderId);
+                    if (!existing?.id) {
+                        const { data: p } = await supabase
+                            .from('profiles')
+                            .select('id,username,avatar_url,role')
+                            .eq('id', senderId)
+                            .maybeSingle();
+                        if (p?.role && HIDE_ADMIN && ADMIN_ROLES.includes(p.role)) return;
+                        if (p?.id) {
+                            setContacts(prev => {
+                                const next = (prev || []).filter(x => x.id !== p.id);
+                                return [p, ...next];
+                            });
+                        }
+                    }
+                }
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [state?.user?.id, viewMode, selectedContact?.id, HIDE_ADMIN]);
 
     const fetchTopics = async () => {
         setLoading(true);
@@ -148,6 +236,30 @@ export const ForumView = ({ navigate }) => {
         }
     };
 
+    const fetchUnreadCounts = async () => {
+        const myId = state?.user?.id;
+        if (!myId) return;
+        try {
+            const { data, error } = await supabase
+                .from('forum_messages')
+                .select('sender_id')
+                .eq('receiver_id', myId)
+                .eq('is_read', false)
+                .order('created_at', { ascending: false })
+                .limit(500);
+            if (error) throw error;
+            const map = (data || []).reduce((acc, r) => {
+                if (!r?.sender_id) return acc;
+                acc[r.sender_id] = Number(acc[r.sender_id] || 0) + 1;
+                return acc;
+            }, {});
+            setUnreadBySender(map);
+            setUnreadTotal(Object.values(map).reduce((acc, n) => acc + Number(n || 0), 0));
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     const fetchComments = async (topicId) => {
         try {
             const { data, error } = await supabase
@@ -194,27 +306,63 @@ export const ForumView = ({ navigate }) => {
             setComments(prev => [...prev, data]);
             setNewComment('');
         } catch (err) {
-            showPopup('Erro ao enviar', 'danger');
+            addNotification('Erro ao enviar', 'danger');
         }
     };
 
     const fetchContacts = async () => {
         setLoading(true);
         try {
-            // Get all profiles for now as MVP to find users to chat with, or just recent chats.
-            // Let's get all profiles to allow discovering users, but limit to 50
-            let query = supabase
+            const myId = state.user.id;
+            // 1) Buscar participantes recentes de conversas (garante que o destinatário veja os desafios recebidos)
+            const { data: recentMsgs, error: msgErr } = await supabase
+                .from('forum_messages')
+                .select('sender_id, receiver_id, created_at')
+                .or(`sender_id.eq.${myId},receiver_id.eq.${myId}`)
+                .order('created_at', { ascending: false })
+                .limit(100);
+            if (msgErr) throw msgErr;
+
+            const idSet = new Set();
+            (recentMsgs || []).forEach(m => {
+                if (m.sender_id && m.sender_id !== myId) idSet.add(m.sender_id);
+                if (m.receiver_id && m.receiver_id !== myId) idSet.add(m.receiver_id);
+            });
+
+            let ids = Array.from(idSet);
+
+            // Fallback: sem conversas ainda, lista geral (limitada)
+            if (ids.length === 0) {
+                let q = supabase
+                    .from('profiles')
+                    .select('id')
+                    .neq('id', myId)
+                    .limit(50);
+                if (HIDE_ADMIN) q = q.neq('role', 'admin_master').neq('role', 'admin_finance');
+                const { data: fallback, error: fbErr } = await q;
+                if (!fbErr && Array.isArray(fallback)) {
+                    ids = fallback.map(p => p.id);
+                }
+            }
+
+            if (ids.length === 0) {
+                setContacts([]);
+                return;
+            }
+
+            let profQuery = supabase
                 .from('profiles')
                 .select('id, username, avatar_url, role')
-                .neq('id', state.user.id)
-                .limit(50);
-            if (HIDE_ADMIN) {
-                query = query.neq('role', 'admin_master').neq('role', 'admin_finance');
-            }
-            const { data, error } = await query;
-            if (error) throw error;
-            const rows = data || [];
-            setContacts(HIDE_ADMIN ? rows.filter(p => !ADMIN_ROLES.includes(p.role)) : rows);
+                .in('id', ids);
+            if (HIDE_ADMIN) profQuery = profQuery.neq('role', 'admin_master').neq('role', 'admin_finance');
+
+            const { data: profiles, error: profErr } = await profQuery;
+            if (profErr) throw profErr;
+
+            // Ordenar conforme ordem de atividade recente
+            const orderMap = ids.reduce((acc, id, i) => { acc[id] = i; return acc; }, {});
+            const rows = (profiles || []).sort((a, b) => (orderMap[a.id] ?? 9999) - (orderMap[b.id] ?? 9999));
+            setContacts(rows);
         } catch (err) {
             console.error(err);
         } finally {
@@ -238,6 +386,7 @@ export const ForumView = ({ navigate }) => {
                 .eq('sender_id', contactId)
                 .eq('receiver_id', state.user.id)
                 .eq('is_read', false);
+            await fetchUnreadCounts();
                 
         } catch (err) {
             console.error(err);
@@ -323,6 +472,10 @@ export const ForumView = ({ navigate }) => {
     const handleReport = async () => {
         if (!reportModal.itemId || !reportReason) return;
         try {
+            if (String(reportModal.reportedUserId || '') === String(state?.user?.id || '')) {
+                addNotification('Você não pode denunciar seu próprio conteúdo.', 'danger');
+                return;
+            }
             const { error } = await supabase.from('forum_reports').insert([{
                 reporter_id: state.user.id,
                 reported_user_id: reportModal.reportedUserId,
@@ -335,6 +488,10 @@ export const ForumView = ({ navigate }) => {
             setReportModal({ isOpen: false, type: '', itemId: '', reportedUserId: '' });
         } catch (err) {
             console.error(err);
+            if (err?.code === '42501') {
+                addNotification('Permissão negada para registrar denúncia. Verifique as políticas RLS do Supabase.', 'danger');
+                return;
+            }
             addNotification('Erro ao enviar denúncia.', 'danger');
         }
     };
@@ -382,7 +539,14 @@ export const ForumView = ({ navigate }) => {
                         onClick={() => setActiveTab('messages')} 
                         className={`flex-1 py-3 text-sm font-bold ${activeTab === 'messages' ? 'text-purple-400 border-b-2 border-purple-500' : 'text-gray-400'}`}
                     >
-                        {t('forum.messages', 'Mensagens')}
+                        <span className="inline-flex items-center justify-center gap-2">
+                            <span>{t('forum.messages', 'Mensagens')}</span>
+                            {unreadTotal > 0 && (
+                                <span className="text-[10px] font-black bg-red-600 text-white px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                                    {unreadTotal > 99 ? '99+' : unreadTotal}
+                                </span>
+                            )}
+                        </span>
                     </button>
                 </div>
             )}
@@ -446,16 +610,18 @@ export const ForumView = ({ navigate }) => {
                                             <ThumbsUp size={14} /> {topic.likes}
                                         </button>
                                         <span className="flex items-center gap-1"><MessageCircle size={14} /> {topic.forum_comments?.[0]?.count || 0}</span>
-                                        <button 
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setReportModal({ isOpen: true, type: 'topic', itemId: topic.id, reportedUserId: topic.user_id });
-                                            }}
-                                            className="ml-auto text-red-500/50 hover:text-red-500 transition-colors"
-                                            title="Denunciar Tópico"
-                                        >
-                                            <AlertTriangle size={14} />
-                                        </button>
+                                        {topic.user_id !== state.user.id && (
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setReportModal({ isOpen: true, type: 'topic', itemId: topic.id, reportedUserId: topic.user_id });
+                                                }}
+                                                className="ml-auto text-red-500/50 hover:text-red-500 transition-colors"
+                                                title="Denunciar Tópico"
+                                            >
+                                                <AlertTriangle size={14} />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             ))
@@ -483,7 +649,14 @@ export const ForumView = ({ navigate }) => {
                                         </div>
                                         <div className="font-bold">{contact.username}</div>
                                     </div>
-                                    <MessageSquare size={16} className="text-gray-500" />
+                                    <div className="flex items-center gap-2">
+                                        {Number(unreadBySender?.[contact.id] || 0) > 0 && (
+                                            <span className="text-[10px] font-black bg-red-600 text-white px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                                                {Number(unreadBySender?.[contact.id] || 0) > 99 ? '99+' : Number(unreadBySender?.[contact.id] || 0)}
+                                            </span>
+                                        )}
+                                        <MessageSquare size={16} className="text-gray-500" />
+                                    </div>
                                 </div>
                             ))
                         )}
@@ -573,13 +746,15 @@ export const ForumView = ({ navigate }) => {
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[10px] text-gray-500">{formatTimeAgo(c.created_at)}</span>
-                                                <button 
-                                                    onClick={() => setReportModal({ isOpen: true, type: 'comment', itemId: c.id, reportedUserId: c.user_id })}
-                                                    className="text-red-500/50 hover:text-red-500 transition-colors"
-                                                    title="Denunciar Comentário"
-                                                >
-                                                    <AlertTriangle size={12} />
-                                                </button>
+                                                {c.user_id !== state.user.id && (
+                                                    <button 
+                                                        onClick={() => setReportModal({ isOpen: true, type: 'comment', itemId: c.id, reportedUserId: c.user_id })}
+                                                        className="text-red-500/50 hover:text-red-500 transition-colors"
+                                                        title="Denunciar Comentário"
+                                                    >
+                                                        <AlertTriangle size={12} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                         <p className="text-sm text-gray-300">{c.content}</p>

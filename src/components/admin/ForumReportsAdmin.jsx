@@ -107,7 +107,7 @@ export default function ForumReportsAdmin() {
                                 <p className="text-sm text-red-300 font-bold">{report.reason}</p>
                             </div>
 
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                                 <Button 
                                     size="sm" 
                                     className="bg-yellow-600/20 text-yellow-500 hover:bg-yellow-600 hover:text-white border border-yellow-600/50"
@@ -123,6 +123,14 @@ export default function ForumReportsAdmin() {
                                     disabled={resolving}
                                 >
                                     <Ban size={14} className="mr-1" /> Ban 7D + Apagar
+                                </Button>
+                                <Button 
+                                    size="sm" 
+                                    className="bg-purple-600/20 text-purple-300 hover:bg-purple-600 hover:text-white border border-purple-600/50"
+                                    onClick={() => handleResolve(report.id, 'dismiss', true)}
+                                    disabled={resolving}
+                                >
+                                    <Trash2 size={14} className="mr-1" /> Apagar Conteúdo
                                 </Button>
                                 <Button 
                                     size="sm" 
