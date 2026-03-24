@@ -246,13 +246,23 @@ export const ArcadeView = () => {
         return [...openGames, ...botGames];
     }, [openGames, botGames]);
 
-    const buildRoomLink = (roomId) => {
+    const buildRoomLink = (roomId, password = '', autoJoin = false) => {
         const url = new URL(window.location.href);
         url.pathname = '/';
         url.searchParams.set('view', 'arcade');
         url.searchParams.set('room', roomId);
+        if (password) url.searchParams.set('pwd', password);
+        else url.searchParams.delete('pwd');
+        if (autoJoin) url.searchParams.set('auto', '1');
+        else url.searchParams.delete('auto');
         url.searchParams.delete('auth');
         return url.toString();
+    };
+
+    const duelTag = (roomId) => {
+        const s = String(roomId || '');
+        const short = s.match(/[0-9a-f]{8}/i)?.[0] || s.slice(0, 8);
+        return `[Duelo #${short}]`;
     };
 
     const extractUuid = (value) => {
@@ -331,16 +341,105 @@ export const ArcadeView = () => {
     };
 
     useEffect(() => {
+        const myId = state?.user?.id;
+        if (!myId) return;
+
         const params = new URLSearchParams(window.location.search);
         const room = params.get('room');
         const cleanRoom = extractUuid(room);
-        if (cleanRoom) {
-            setTab('pvp');
-            setPvpView('lobby');
-            setPendingRoomId(cleanRoom);
-            setShowJoinModal(true);
-        }
-    }, []);
+        if (!cleanRoom) return;
+
+        const pwd = String(params.get('pwd') || '').trim();
+        const auto = params.get('auto') === '1';
+
+        const initFromLink = async () => {
+            try {
+                const { data: dbRoom, error } = await supabase
+                    .from('pvp_rooms')
+                    .select('id,status,creator_id,opponent_id,creator_avatar,opponent_avatar,game_type,bet_amount_mph,is_private')
+                    .eq('id', cleanRoom)
+                    .maybeSingle();
+                if (error) throw error;
+                if (!dbRoom?.id) return;
+
+                setTab('pvp');
+                setPvpView('lobby');
+
+                if (dbRoom.creator_id === myId) {
+                    setPvpConfig(prev => ({
+                        ...prev,
+                        roomPassword: pwd || prev.roomPassword || ''
+                    }));
+                    applyPrivateRoomOpen(dbRoom);
+                    setShowJoinModal(false);
+                    return;
+                }
+
+                setPendingRoomId(cleanRoom);
+
+                if (auto) {
+                    setJoinPassword(pwd);
+                    setShowJoinModal(false);
+                    try {
+                        const { data, error: joinErr } = await supabase.rpc('join_pvp_room', {
+                            p_room_id: cleanRoom,
+                            p_password: pwd || '',
+                            p_opponent_avatar: pvpConfig.char
+                        });
+                        if (joinErr) throw joinErr;
+                        if (!data?.ok) throw new Error(data?.error || 'Falha ao entrar na sala.');
+
+                        setState(prev => ({
+                            ...prev,
+                            wallet: {
+                                ...prev.wallet,
+                                mph: Number(data.balance_mph || prev.wallet.mph || 0)
+                            }
+                        }));
+
+                        const { data: roomAfter } = await supabase
+                            .from('pvp_rooms')
+                            .select('id,status,creator_id,opponent_id,creator_avatar,opponent_avatar,game_type,bet_amount_mph,is_private')
+                            .eq('id', cleanRoom)
+                            .maybeSingle();
+
+                        // Mensagem automática no Fórum para o criador (feedback de aceite)
+                        try {
+                            if (roomAfter?.creator_id && state?.user?.id && roomAfter?.id) {
+                                await supabase.from('forum_messages').insert([{
+                                    sender_id: state.user.id,
+                                    receiver_id: roomAfter.creator_id,
+                                    content: `${state?.user?.username || 'Oponente'} aceitou o duelo de ${Number(roomAfter.bet_amount_mph || 0)} MPH! Entrando na sala...`,
+                                    is_duel_invite: false,
+                                    duel_room_id: roomAfter.id
+                                }]);
+                            }
+                        } catch {}
+
+                        if (roomAfter?.id && roomAfter.status === 'matched' && roomAfter.opponent_id) {
+                            await applyPrivateRoomMatched(roomAfter);
+                        } else if (roomAfter?.id && roomAfter.status === 'open') {
+                            applyPrivateRoomOpen(roomAfter);
+                        }
+
+                        setJoinPassword('');
+                        clearRoomFromUrl();
+                        addNotification('Desafio aceito! Preparando arena...', 'success');
+                        return;
+                    } catch (e) {
+                        setShowJoinModal(true);
+                    }
+                } else {
+                    setShowJoinModal(true);
+                }
+            } catch (e) {
+                console.error('Erro ao inicializar sala via link:', e);
+                setShowJoinModal(true);
+            }
+        };
+
+        initFromLink();
+    }, [state?.user?.id]);
 
     useEffect(() => {
         if (tab !== 'pvp') return;
@@ -434,6 +533,19 @@ export const ArcadeView = () => {
                 .select('id,status,creator_id,opponent_id,creator_avatar,opponent_avatar,game_type,bet_amount_mph')
                 .eq('id', roomId)
                 .maybeSingle();
+
+            // Mensagem automática no Fórum para o criador (feedback de aceite)
+            try {
+                if (room?.creator_id && state?.user?.id && room?.id) {
+                    await supabase.from('forum_messages').insert([{
+                        sender_id: state.user.id,
+                        receiver_id: room.creator_id,
+                        content: `${state?.user?.username || 'Oponente'} aceitou o duelo de ${Number(room.bet_amount_mph || 0)} MPH! Entrando na sala... ${duelTag(room.id)}`,
+                        is_duel_invite: false,
+                        duel_room_id: room.id
+                    }]);
+                }
+            } catch {}
 
             if (room?.id && room.status === 'matched' && room.opponent_id) {
                 await applyPrivateRoomMatched(room);
@@ -621,6 +733,15 @@ export const ArcadeView = () => {
             if (shouldCloseThisTime) {
                 writePvpTimeoutMeta(1);
                 addNotification(t('arcade.noHumanFound'), 'info');
+                // Mensagem automática para si mesmo
+                try {
+                    supabase.from('forum_messages').insert([{
+                        sender_id: state.user.id,
+                        receiver_id: state.user.id,
+                        content: `Nenhum humano encontrado. Sala encerrada. ${duelTag(pvpConfig.roomId || pvpConfig.gameId || '')}`,
+                        is_duel_invite: false
+                    }]).then(() => {}).catch(() => {});
+                } catch {}
                 setPvpState('lobby');
             } else {
                 clearPvpTimeoutMeta();
@@ -655,10 +776,34 @@ export const ArcadeView = () => {
                             .eq('id', roomId)
                             .maybeSingle();
                         if (room?.id && room.status === 'matched' && room.opponent_id) {
+                            // Mensagem automática:“já dentro da sala”
+                            try {
+                                const isCreator = state?.user?.id === room.creator_id;
+                                const receiverId = isCreator ? room.opponent_id : room.creator_id;
+                                if (receiverId) {
+                                    await supabase.from('forum_messages').insert([{
+                                        sender_id: state.user.id,
+                                        receiver_id: receiverId,
+                                    content: `${state?.user?.username || 'Jogador'} já está na sala. Boa partida! ${duelTag(room.id)}`,
+                                        is_duel_invite: false,
+                                        duel_room_id: room.id
+                                    }]);
+                                }
+                            } catch {}
                             await applyPrivateRoomMatched(room);
                         }
                     }
                     if (updated?.status === 'cancelled') {
+                        // Feedback automático: sala encerrada
+                        try {
+                            await supabase.from('forum_messages').insert([{
+                                sender_id: state.user.id,
+                                receiver_id: state.user.id,
+                                content: `Nenhum humano encontrado. Sala encerrada e reembolsada. ${duelTag(roomId)}`,
+                                is_duel_invite: false,
+                                duel_room_id: roomId
+                            }]);
+                        } catch {}
                         clearActivePvpRoomId();
                         setPvpState('lobby');
                     }
@@ -740,6 +885,56 @@ export const ArcadeView = () => {
                         ...prev,
                         wallet: { ...prev.wallet, mph: Number(walletRow.balance_mph || 0) }
                     }));
+                }
+
+                // Mensagens automáticas de resultado no Fórum
+                try {
+                    const otherId = selfIsCreator ? room.opponent_id : room.creator_id;
+                    // Buscar nomes de ambos para compor o placar legível
+                    let creatorName = 'Criador';
+                    let opponentName = 'Oponente';
+                    try {
+                        const { data: profs } = await supabase
+                            .from('profiles')
+                            .select('id,username')
+                            .in('id', [room.creator_id, room.opponent_id]);
+                        if (Array.isArray(profs)) {
+                            const map = profs.reduce((acc, p) => { acc[p.id] = p.username || acc[p.id]; return acc;}, {});
+                            creatorName = map[room.creator_id] || creatorName;
+                            opponentName = map[room.opponent_id] || opponentName;
+                        }
+                    } catch {}
+                    const scoreStr = `${creatorName} ${Number(room.creator_score || 0)}–${Number(room.opponent_score || 0)} ${opponentName}`;
+                    let resultStr = 'Empate';
+                    let prizeLine = `${(bet * 0.85).toFixed(2)} MPH para cada`;
+                    if (room.winner_id) {
+                        const winnerName = room.winner_id === room.creator_id ? creatorName : opponentName;
+                        resultStr = `Vencedor: ${winnerName}`;
+                        prizeLine = `${(bet * 2 * 0.85).toFixed(2)} MPH para o vencedor`;
+                    }
+                    const commonContent = `Partida finalizada • Placar ${scoreStr}. ${resultStr}. Prêmio: ${prizeLine}.`;
+                    const rows = [];
+                    if (otherId) {
+                        rows.push({
+                            sender_id: state.user.id,
+                            receiver_id: otherId,
+                            content: `${commonContent} ${duelTag(roomId)}`,
+                            is_duel_invite: false,
+                            duel_room_id: roomId
+                        });
+                    }
+                    rows.push({
+                        sender_id: state.user.id,
+                        receiver_id: state.user.id,
+                        content: `${commonContent} ${duelTag(roomId)}`,
+                        is_duel_invite: false,
+                        duel_room_id: roomId
+                    });
+                    if (rows.length > 0) {
+                        await supabase.from('forum_messages').insert(rows);
+                    }
+                } catch (e) {
+                    console.warn('Falha ao publicar mensagem de resultado no fórum', e);
                 }
 
                 setPvpResult({ outcome, prize, score: { player: selfScore, opponent: otherScore } });
@@ -1094,7 +1289,7 @@ export const ArcadeView = () => {
                                         <p className="text-xs text-gray-400 mb-2">{t('arcade.shareLink')}</p>
                                         <div className="flex gap-2">
                                             <div className="bg-black/50 p-2 rounded text-xs text-gray-300 font-mono flex-1 truncate border border-gray-600">
-                                                {buildRoomLink(pvpConfig.roomId || pvpConfig.gameId || '...')}
+                                                {buildRoomLink(pvpConfig.roomId || pvpConfig.gameId || '...', pvpConfig.roomPassword || '', true)}
                                             </div>
                                             <Button onClick={handleShareLink} size="sm" className="bg-blue-600 px-3">
                                                 <Copy size={14} />

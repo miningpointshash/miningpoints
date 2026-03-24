@@ -39,6 +39,7 @@ export const ForumView = ({ navigate }) => {
     const [chatMessages, setChatMessages] = useState([]);
     const [newChatMessage, setNewChatMessage] = useState('');
     const contactsRef = useRef([]);
+    const [isSendingChallenge, setIsSendingChallenge] = useState(false);
 
     // Challenge
     const [betAmount, setBetAmount] = useState(100);
@@ -83,6 +84,40 @@ export const ForumView = ({ navigate }) => {
     const ADMIN_ROLES = ['admin_master', 'admin_finance'];
     const isAuditor = ADMIN_ROLES.includes(state?.user?.role);
     const HIDE_ADMIN = !isAuditor;
+
+    const extractUuid = (value) => {
+        const s = String(value || '').trim();
+        const m = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        return m ? m[0] : '';
+    };
+
+    const saveActivePvpRoomId = (roomId) => {
+        const uid = state?.user?.id || 'anon';
+        const clean = extractUuid(roomId);
+        if (!clean) return;
+        try { localStorage.setItem(`mining_points_active_pvp_room_${uid}`, clean); } catch {}
+    };
+
+    const buildDuelLink = (roomId, password, autoJoin = true) => {
+        const url = new URL(window.location.href);
+        url.pathname = '/';
+        url.searchParams.set('view', 'arcade');
+        url.searchParams.set('room', roomId);
+        if (password) url.searchParams.set('pwd', password);
+        if (autoJoin) url.searchParams.set('auto', '1');
+        url.searchParams.delete('auth');
+        return url.toString();
+    };
+
+    const openArcadeRoom = (roomId, password, autoJoin) => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', 'arcade');
+        url.searchParams.set('room', roomId);
+        if (password) url.searchParams.set('pwd', password);
+        if (autoJoin) url.searchParams.set('auto', '1');
+        history.replaceState(null, '', url.toString());
+        navigate('arcade');
+    };
 
     useEffect(() => {
         contactsRef.current = contacts || [];
@@ -413,25 +448,30 @@ export const ForumView = ({ navigate }) => {
 
     const handleSendChallenge = async () => {
         if (!selectedContact) return;
+        if (isSendingChallenge) return;
         if (state.wallet.mph < betAmount) {
             addNotification(t('arcade.insufficientFunds', 'Saldo insuficiente'), 'danger');
             return;
         }
 
+        setIsSendingChallenge(true);
         try {
-            // Create a PVP room first
+            const password = String(Math.floor(100000 + Math.random() * 900000));
+
+            // Create a PVP room first (private)
             const { data: rpcData, error: rpcError } = await supabase.rpc('create_pvp_room', {
                 p_game_type: '12doors',
                 p_bet_amount_mph: betAmount,
                 p_creator_avatar: state.user.avatar_url || 'mp_p1',
-                p_is_private: false,
-                p_password: ''
+                p_is_private: true,
+                p_password: password
             });
 
             if (rpcError) throw rpcError;
             if (!rpcData?.ok) throw new Error(rpcData?.error || 'Erro ao criar sala');
 
             const roomId = rpcData.room_id;
+            const duelTag = `[Duelo #${String(roomId).slice(0,8)}]`;
             if (rpcData?.balance_mph !== undefined) {
                 setState(prev => ({
                     ...prev,
@@ -446,27 +486,30 @@ export const ForumView = ({ navigate }) => {
             const msg = {
                 sender_id: state.user.id,
                 receiver_id: selectedContact.id,
-                content: `Te desafiou para um duelo de ${betAmount} MPH!`,
+                content: `Te desafiou para um duelo de ${betAmount} MPH! ${duelTag}`,
                 is_duel_invite: true,
-                duel_room_id: roomId
+                duel_room_id: roomId,
+                duel_password: password,
+                duel_bet_amount_mph: betAmount,
+                duel_game_type: '12doors'
             };
             const { data, error } = await supabase.from('forum_messages').insert([msg]).select().single();
             if (error) throw error;
             
             setChatMessages(prev => [...prev, data]);
             setViewMode('chat');
+            saveActivePvpRoomId(roomId);
             addNotification('Desafio enviado!', 'success');
         } catch (err) {
             console.error(err);
             addNotification('Erro ao desafiar: ' + err.message, 'danger');
+        } finally {
+            setIsSendingChallenge(false);
         }
     };
 
-    const handleAcceptDuel = async (roomId) => {
-        const url = new URL(window.location.href);
-        url.searchParams.set('room', roomId);
-        history.replaceState(null, '', url.toString());
-        navigate('arcade');
+    const handleAcceptDuel = async (roomId, password) => {
+        openArcadeRoom(roomId, password || '', true);
     };
 
     const handleReport = async () => {
@@ -775,13 +818,57 @@ export const ForumView = ({ navigate }) => {
                                     <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                                         <div className={`max-w-[80%] p-3 rounded-2xl ${isMe ? 'bg-purple-600 text-white rounded-br-none' : 'bg-gray-800 text-gray-200 rounded-bl-none'}`}>
                                             <p className="text-sm">{msg.content}</p>
-                                            {msg.is_duel_invite && !isMe && (
-                                                <button 
-                                                    onClick={() => handleAcceptDuel(msg.duel_room_id)}
-                                                    className="mt-2 w-full bg-red-600 hover:bg-red-500 text-white text-xs font-bold py-2 rounded flex items-center justify-center gap-1"
-                                                >
-                                                    <Swords size={12} /> {t('forum.acceptDuel', 'Aceitar Duelo')}
-                                                </button>
+                                            {msg.is_duel_invite && (
+                                                <div className="mt-2 space-y-2">
+                                                    {!isMe && (
+                                                        <button 
+                                                            onClick={() => handleAcceptDuel(msg.duel_room_id, msg.duel_password)}
+                                                            className="w-full bg-red-600 hover:bg-red-500 text-white text-xs font-bold py-2 rounded flex items-center justify-center gap-1"
+                                                        >
+                                                            <Swords size={12} /> {t('forum.acceptDuel', 'Aceitar Duelo')}
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => {
+                                                            const link = buildDuelLink(msg.duel_room_id, msg.duel_password, true);
+                                                            navigator.clipboard.writeText(link);
+                                                            addNotification('Link copiado!', 'success');
+                                                        }}
+                                                        className="w-full bg-black/40 border border-gray-700 hover:border-gray-500 text-gray-200 text-xs font-bold py-2 rounded flex items-center justify-center gap-1"
+                                                    >
+                                                        {isMe ? 'COPIAR LINK DO DUELO' : 'COPIAR LINK'}
+                                                    </button>
+                                                    {isMe && (
+                                                        <button
+                                                            onClick={() => openArcadeRoom(msg.duel_room_id, msg.duel_password, false)}
+                                                            className="w-full bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded flex items-center justify-center gap-1"
+                                                        >
+                                                            ABRIR SALA (AGUARDAR)
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {!msg.is_duel_invite && msg.duel_room_id && (
+                                                <div className="mt-2 flex gap-2">
+                                                    <button
+                                                        onClick={() => openArcadeRoom(msg.duel_room_id, msg.duel_password || '', true)}
+                                                        className="flex-1 bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded"
+                                                        title="Abrir duelo"
+                                                    >
+                                                        ABRIR DUELO
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            const link = buildDuelLink(msg.duel_room_id, msg.duel_password || '', true);
+                                                            navigator.clipboard.writeText(link);
+                                                            addNotification('Link do duelo copiado!', 'success');
+                                                        }}
+                                                        className="flex-1 bg-black/40 border border-gray-700 hover:border-gray-500 text-gray-200 text-xs font-bold py-2 rounded"
+                                                        title="Copiar link do duelo"
+                                                    >
+                                                        COPIAR LINK
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
                                         <span className="text-[10px] text-gray-500 mt-1">{formatTimeAgo(msg.created_at)}</span>
@@ -824,6 +911,7 @@ export const ForumView = ({ navigate }) => {
                         <button 
                             onClick={handleSendChallenge}
                             className="w-full py-3 bg-gradient-to-r from-red-600 to-red-800 rounded-xl font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+                            disabled={isSendingChallenge}
                         >
                             <Swords size={18} /> {t('forum.sendChallenge', 'Enviar Desafio')}
                         </button>
