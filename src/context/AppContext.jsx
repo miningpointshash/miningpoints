@@ -364,6 +364,31 @@ export const AppProvider = ({ children }) => {
                 } catch (err) {
                     console.error('Erro ao carregar rankings/torneios/ONG:', err);
                 }
+                
+                // Carregar estado dos Bots do Supabase (se existir)
+                try {
+                    const { data: botsRows } = await supabase
+                        .from('system_bots')
+                        .select('id, active, mph, nicknames');
+                    if (Array.isArray(botsRows) && botsRows.length > 0) {
+                        const map = new Map(botsRows.map(r => [r.id, r]));
+                        setState(prev => ({
+                            ...prev,
+                            bots: prev.bots.map(tpl => {
+                                const row = map.get(tpl.id);
+                                if (!row) return tpl;
+                                return {
+                                    ...tpl,
+                                    active: typeof row.active === 'boolean' ? row.active : tpl.active,
+                                    mph: Number(row.mph ?? tpl.mph ?? 0),
+                                    nicknames: Array.isArray(row.nicknames) ? row.nicknames : tpl.nicknames
+                                };
+                            })
+                        }));
+                    }
+                } catch (e) {
+                    console.error('Erro ao carregar bots do Supabase:', e);
+                }
             }
         } catch (error) {
             console.error("Erro na sincronização Supabase:", error);
@@ -712,6 +737,16 @@ export const AppProvider = ({ children }) => {
       ...prev,
       bots: prev.bots.map(b => b.id === botId ? { ...b, ...updates } : b)
     }));
+    try {
+      const bot = state.bots.find(b => b.id === botId) || {};
+      const payload = {
+        id: botId,
+        active: updates.active ?? bot.active ?? true,
+        mph: updates.mph ?? bot.mph ?? 0,
+        nicknames: Array.isArray(bot.nicknames) ? bot.nicknames : null
+      };
+      supabase.from('system_bots').upsert([payload]).then(() => {}).catch(() => {});
+    } catch {}
   };
 
   const processPvpDistribution = (betAmount) => {

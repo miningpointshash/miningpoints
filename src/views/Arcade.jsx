@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useRef } from 'react';
 import { AlertTriangle, History, Swords, Trophy, Users, Check, X, Share2, Copy, Volume2, VolumeX, Lock } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
 import { Button } from '../components/ui/Button';
@@ -32,6 +32,37 @@ export const ArcadeView = () => {
     const [isSettling, setIsSettling] = useState(false);
     const [pvpHistory, setPvpHistory] = useState([]);
     const { state, setState, addNotification, addGameResult, processPvpDistribution, consumeDailyCredit, buyCredits, t, getNextBotDifficulty } = useContext(AppContext);
+    const presenceIntervalRef = useRef(null);
+
+    useEffect(() => {
+        const uid = state?.user?.id;
+        if (!uid) return;
+
+        const ping = async (active) => {
+            try {
+                await supabase.rpc('set_user_presence', { p_arcade_active: Boolean(active) });
+            } catch {}
+        };
+
+        ping(true);
+        if (presenceIntervalRef.current) {
+            clearInterval(presenceIntervalRef.current);
+            presenceIntervalRef.current = null;
+        }
+        presenceIntervalRef.current = setInterval(() => ping(true), 30000);
+
+        const onBeforeUnload = () => { ping(false); };
+        window.addEventListener('beforeunload', onBeforeUnload);
+
+        return () => {
+            window.removeEventListener('beforeunload', onBeforeUnload);
+            if (presenceIntervalRef.current) {
+                clearInterval(presenceIntervalRef.current);
+                presenceIntervalRef.current = null;
+            }
+            ping(false);
+        };
+    }, [state?.user?.id]);
 
     const getPvpTimeoutKey = () => {
         const uid = state?.user?.id || 'anon';
@@ -1520,16 +1551,23 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
     const [customBet, setCustomBet] = useState('');
     const [isPrivate, setIsPrivate] = useState(false);
     const [privatePassword, setPrivatePassword] = useState('');
-    const [lobbyStats, setLobbyStats] = useState({ totalPaid: 0, onlineUsers: 0 });
+    const [lobbyStats, setLobbyStats] = useState({ totalPaid: 0, inPlayMph: 0, onlineUsers: 0 });
 
     useEffect(() => {
         const fetchLobbyStats = async () => {
             const { data: totalPaid } = await supabase.rpc('get_arcade_total_paid');
+            const { data: inPlay } = await supabase.rpc('get_arcade_total_in_play_mph');
             const botOnline = Number(botsOnline || 0);
             const represented = botOnline * 5; // cada bot representa 5 contas
+            let realOnline = 0;
+            try {
+                const { data } = await supabase.rpc('get_arcade_online_users_count');
+                realOnline = Number(data || 0);
+            } catch {}
             setLobbyStats({
                 totalPaid: Number(totalPaid || 0),
-                onlineUsers: represented
+                inPlayMph: Number(inPlay || 0),
+                onlineUsers: represented + realOnline
             });
         };
         fetchLobbyStats();
@@ -1724,8 +1762,9 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
         <div className="grid grid-cols-2 gap-4">
             <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 text-center">
                 <Trophy className="mx-auto text-yellow-500 mb-2" />
-                <p className="text-xs text-gray-400">{t('arcade.totalPaid')}</p>
-                <p className="text-lg font-bold text-white">{lobbyStats.totalPaid > 1000000 ? (lobbyStats.totalPaid / 1000000).toFixed(1) + 'M' : lobbyStats.totalPaid.toLocaleString()} MPH</p>
+                <p className="text-xs text-gray-400">{t('arcade.volumeInPlay', 'Vol. em Jogo')}</p>
+                <p className="text-lg font-bold text-white">{lobbyStats.inPlayMph > 1000000 ? (lobbyStats.inPlayMph / 1000000).toFixed(1) + 'M' : lobbyStats.inPlayMph.toLocaleString()} MPH</p>
+                <p className="text-[10px] text-gray-500 mt-1">{t('arcade.totalPaid', 'Total Pago')}: {lobbyStats.totalPaid > 1000000 ? (lobbyStats.totalPaid / 1000000).toFixed(1) + 'M' : lobbyStats.totalPaid.toLocaleString()} MPH</p>
             </div>
             <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 text-center">
                 <Users className="mx-auto text-blue-500 mb-2" />

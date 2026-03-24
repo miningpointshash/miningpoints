@@ -183,7 +183,7 @@ export const ForumView = ({ navigate }) => {
                         }
                     }
 
-                    addNotification(`Convite de duelo de ${senderName || 'usuário'}!`, 'game');
+                    addNotification(`${t('forum.duelInviteFrom', 'Convite de duelo de')} ${senderName || t('forum.userGeneric', 'usuário')}!`, 'game');
                 } else {
                     const existing = (contactsRef.current || []).find(c => c.id === senderId);
                     if (!existing?.id) {
@@ -227,7 +227,7 @@ export const ForumView = ({ navigate }) => {
             await fetchMyTopicLikes(rows.map(r => r.id).filter(Boolean));
         } catch (err) {
             console.error(err);
-            addNotification('Erro ao carregar tópicos', 'danger');
+            addNotification(t('forum.loadTopicsError', 'Erro ao carregar tópicos'), 'danger');
         } finally {
             setLoading(false);
         }
@@ -273,7 +273,7 @@ export const ForumView = ({ navigate }) => {
             setSelectedTopic(prev => (prev?.id === topicId ? { ...prev, likes } : prev));
         } catch (err) {
             console.error(err);
-            addNotification('Erro ao registrar like', 'danger');
+            addNotification(t('forum.likeError', 'Erro ao registrar like'), 'danger');
         }
     };
 
@@ -329,9 +329,9 @@ export const ForumView = ({ navigate }) => {
             setNewTitle('');
             setNewContent('');
             setViewMode('list');
-            addNotification('Tópico criado!', 'success');
+            addNotification(t('forum.topicCreated', 'Tópico criado!'), 'success');
         } catch (err) {
-            addNotification('Erro ao criar tópico', 'danger');
+            addNotification(t('forum.createTopicError', 'Erro ao criar tópico'), 'danger');
         }
     };
 
@@ -347,7 +347,7 @@ export const ForumView = ({ navigate }) => {
             setComments(prev => [...prev, data]);
             setNewComment('');
         } catch (err) {
-            addNotification('Erro ao enviar', 'danger');
+            addNotification(t('forum.sendError', 'Erro ao enviar'), 'danger');
         }
     };
 
@@ -450,7 +450,7 @@ export const ForumView = ({ navigate }) => {
             setChatMessages(prev => [...prev, data]);
             setNewChatMessage('');
         } catch (err) {
-            addNotification('Erro ao enviar', 'danger');
+            addNotification(t('forum.sendError', 'Erro ao enviar'), 'danger');
         }
     };
 
@@ -494,7 +494,7 @@ export const ForumView = ({ navigate }) => {
             const msg = {
                 sender_id: state.user.id,
                 receiver_id: selectedContact.id,
-                content: `Te desafiou para um duelo de ${betAmount} MPH no ${duelGameLabel}! ${duelTag}`,
+                content: `${t('forum.challengeMessage', 'Te desafiou para um duelo de')} ${betAmount} MPH ${t('forum.challengeMessageGameConnector', 'no')} ${duelGameLabel}! ${duelTag}`,
                 is_duel_invite: true,
                 duel_room_id: roomId,
                 duel_password: password,
@@ -507,10 +507,10 @@ export const ForumView = ({ navigate }) => {
             setChatMessages(prev => [...prev, data]);
             setViewMode('chat');
             saveActivePvpRoomId(roomId);
-            addNotification('Desafio enviado!', 'success');
+            addNotification(t('forum.challengeSent', 'Desafio enviado!'), 'success');
         } catch (err) {
             console.error(err);
-            addNotification('Erro ao desafiar: ' + err.message, 'danger');
+            addNotification(`${t('forum.challengeSendError', 'Erro ao desafiar')}: ${err.message}`, 'danger');
         } finally {
             setIsSendingChallenge(false);
         }
@@ -550,7 +550,7 @@ export const ForumView = ({ navigate }) => {
         if (!reportModal.itemId || !reportReason) return;
         try {
             if (String(reportModal.reportedUserId || '') === String(state?.user?.id || '')) {
-                addNotification('Você não pode denunciar seu próprio conteúdo.', 'danger');
+                addNotification(t('forum.reportSelfError', 'Você não pode denunciar seu próprio conteúdo.'), 'danger');
                 return;
             }
             const { error } = await supabase.from('forum_reports').insert([{
@@ -561,15 +561,15 @@ export const ForumView = ({ navigate }) => {
                 reason: reportReason
             }]);
             if (error) throw error;
-            addNotification('Denúncia enviada com sucesso.', 'success');
+            addNotification(t('forum.reportSent', 'Denúncia enviada com sucesso.'), 'success');
             setReportModal({ isOpen: false, type: '', itemId: '', reportedUserId: '' });
         } catch (err) {
             console.error(err);
             if (err?.code === '42501') {
-                addNotification('Permissão negada para registrar denúncia. Verifique as políticas RLS do Supabase.', 'danger');
+                addNotification(t('forum.reportPermissionError', 'Permissão negada para registrar denúncia. Verifique as políticas RLS do Supabase.'), 'danger');
                 return;
             }
-            addNotification('Erro ao enviar denúncia.', 'danger');
+            addNotification(t('forum.reportError', 'Erro ao enviar denúncia.'), 'danger');
         }
     };
 
@@ -578,9 +578,9 @@ export const ForumView = ({ navigate }) => {
         const days = Math.floor(diff / (1000 * 60 * 60 * 24));
         const hours = Math.floor(diff / (1000 * 60 * 60));
         const mins = Math.floor(diff / (1000 * 60));
-        if (days > 0) return `${days}d atrás`;
-        if (hours > 0) return `${hours}h atrás`;
-        return `${mins}m atrás`;
+        if (days > 0) return `${days}${t('forum.timeDaysAgo', 'd atrás')}`;
+        if (hours > 0) return `${hours}${t('forum.timeHoursAgo', 'h atrás')}`;
+        return `${mins}${t('forum.timeMinsAgo', 'm atrás')}`;
     };
 
     return (
@@ -682,7 +682,7 @@ export const ForumView = ({ navigate }) => {
                                         <button
                                             onClick={(e) => { e.stopPropagation(); toggleTopicLike(topic.id); }}
                                             className={`flex items-center gap-1 transition-colors ${likedTopicMap?.[topic.id] ? 'text-green-400' : 'text-gray-500 hover:text-green-400'}`}
-                                            title="Curtir"
+                                            title={t('forum.like', 'Curtir')}
                                         >
                                             <ThumbsUp size={14} /> {topic.likes}
                                         </button>
@@ -694,7 +694,7 @@ export const ForumView = ({ navigate }) => {
                                                     setReportModal({ isOpen: true, type: 'topic', itemId: topic.id, reportedUserId: topic.user_id });
                                                 }}
                                                 className="ml-auto text-red-500/50 hover:text-red-500 transition-colors"
-                                                title="Denunciar Tópico"
+                                                title={t('forum.reportTopic', 'Denunciar Tópico')}
                                             >
                                                 <AlertTriangle size={14} />
                                             </button>
@@ -795,9 +795,9 @@ export const ForumView = ({ navigate }) => {
                                 <button
                                     onClick={() => toggleTopicLike(selectedTopic.id)}
                                     className={`flex items-center gap-1 transition-colors ${likedTopicMap?.[selectedTopic.id] ? 'text-green-400' : 'text-gray-500 hover:text-green-400'}`}
-                                    title="Curtir"
+                                    title={t('forum.like', 'Curtir')}
                                 >
-                                    <ThumbsUp size={14} /> {selectedTopic.likes} Likes
+                                    <ThumbsUp size={14} /> {selectedTopic.likes} {t('forum.likes', 'Curtidas')}
                                 </button>
                                 <span className="flex items-center gap-1"><MessageCircle size={14} /> {comments.length} {t('forum.comments', 'Comentários')}</span>
                             </div>
@@ -827,7 +827,7 @@ export const ForumView = ({ navigate }) => {
                                                     <button 
                                                         onClick={() => setReportModal({ isOpen: true, type: 'comment', itemId: c.id, reportedUserId: c.user_id })}
                                                         className="text-red-500/50 hover:text-red-500 transition-colors"
-                                                        title="Denunciar Comentário"
+                                                        title={t('forum.reportComment', 'Denunciar Comentário')}
                                                     >
                                                         <AlertTriangle size={12} />
                                                     </button>
@@ -873,36 +873,36 @@ export const ForumView = ({ navigate }) => {
                                                                         is_duel_invite: false,
                                                                         duel_room_id: msg.duel_room_id || null
                                                                     }]);
-                                                                    addNotification('Desafio rejeitado.', 'info');
+                                                                    addNotification(t('forum.challengeRejected', 'Desafio rejeitado.'), 'info');
                                                                 } catch {}
                                                             }}
                                                             className="w-full bg-black/40 border border-gray-700 hover:border-gray-500 text-gray-300 text-xs font-bold py-2 rounded"
                                                         >
-                                                            REJEITAR DESAFIO
+                                                            {t('forum.rejectChallenge', 'REJEITAR DESAFIO')}
                                                         </button>
                                                     )}
                                                     <button
                                                         onClick={() => {
                                                             const link = buildDuelLink(msg.duel_room_id, msg.duel_password, true);
                                                             navigator.clipboard.writeText(link);
-                                                            addNotification('Link copiado!', 'success');
+                                                            addNotification(t('forum.linkCopied', 'Link copiado!'), 'success');
                                                         }}
                                                         className="w-full bg-black/40 border border-gray-700 hover:border-gray-500 text-gray-200 text-xs font-bold py-2 rounded flex items-center justify-center gap-1"
                                                     >
-                                                        {isMe ? 'COPIAR LINK DO DUELO' : 'COPIAR LINK'}
+                                                        {isMe ? t('forum.copyDuelLink', 'COPIAR LINK DO DUELO') : t('forum.copyLink', 'COPIAR LINK')}
                                                     </button>
                                                     {isMe && (
                                                         <button
                                                             onClick={() => openArcadeRoom(msg.duel_room_id, msg.duel_password, false)}
                                                             className="w-full bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded flex items-center justify-center gap-1"
                                                         >
-                                                            ABRIR SALA (AGUARDAR)
+                                                            {t('forum.openRoomWait', 'ABRIR SALA (AGUARDAR)')}
                                                         </button>
                                                     )}
                                                     {isMe && duelRoomStatusById?.[String(msg.duel_room_id)] === 'open' && (
                                                         <button
                                                             onClick={async () => {
-                                                                if (!window.confirm('Cancelar este desafio e reembolsar a aposta?')) return;
+                                                                if (!window.confirm(t('forum.confirmCancelChallenge', 'Cancelar este desafio e reembolsar a aposta?'))) return;
                                                                 try {
                                                                     const { data, error } = await supabase.rpc('cancel_pvp_room', { p_room_id: msg.duel_room_id });
                                                                     if (error) throw error;
@@ -923,15 +923,15 @@ export const ForumView = ({ navigate }) => {
                                                                         is_duel_invite: false,
                                                                         duel_room_id: msg.duel_room_id || null
                                                                     }]);
-                                                                    addNotification('Desafio cancelado e reembolsado.', 'success');
+                                                                    addNotification(t('forum.challengeCancelledRefunded', 'Desafio cancelado e reembolsado.'), 'success');
                                                                 } catch (e) {
                                                                     console.error(e);
-                                                                    addNotification('Não foi possível cancelar (talvez já tenha sido aceito/encerrado).', 'danger');
+                                                                    addNotification(t('forum.challengeCancelFailed', 'Não foi possível cancelar (talvez já tenha sido aceito/encerrado).'), 'danger');
                                                                 }
                                                             }}
                                                             className="w-full bg-red-900/30 border border-red-700/50 hover:border-red-500 text-red-300 text-xs font-bold py-2 rounded"
                                                         >
-                                                            CANCELAR DESAFIO (REEMBOLSAR)
+                                                            {t('forum.cancelChallengeRefund', 'CANCELAR DESAFIO (REEMBOLSAR)')}
                                                         </button>
                                                     )}
                                                 </div>
@@ -941,20 +941,20 @@ export const ForumView = ({ navigate }) => {
                                                     <button
                                                         onClick={() => openArcadeRoom(msg.duel_room_id, msg.duel_password || '', Boolean(msg.duel_password))}
                                                         className="flex-1 bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded"
-                                                        title="Abrir duelo"
+                                                        title={t('forum.openDuelTitle', 'Abrir duelo')}
                                                     >
-                                                        ABRIR DUELO
+                                                        {t('forum.openDuel', 'ABRIR DUELO')}
                                                     </button>
                                                     <button
                                                         onClick={() => {
                                                             const link = buildDuelLink(msg.duel_room_id, msg.duel_password || '', Boolean(msg.duel_password));
                                                             navigator.clipboard.writeText(link);
-                                                            addNotification('Link do duelo copiado!', 'success');
+                                                            addNotification(t('forum.duelLinkCopied', 'Link do duelo copiado!'), 'success');
                                                         }}
                                                         className="flex-1 bg-black/40 border border-gray-700 hover:border-gray-500 text-gray-200 text-xs font-bold py-2 rounded"
-                                                        title="Copiar link do duelo"
+                                                        title={t('forum.copyDuelLinkTitle', 'Copiar link do duelo')}
                                                     >
-                                                        COPIAR LINK
+                                                        {t('forum.copyLink', 'COPIAR LINK')}
                                                     </button>
                                                 </div>
                                             )}
@@ -964,7 +964,7 @@ export const ForumView = ({ navigate }) => {
                                             <button 
                                                 onClick={() => setReportModal({ isOpen: true, type: 'message', itemId: msg.id, reportedUserId: msg.sender_id })}
                                                 className="text-red-500/30 hover:text-red-500 mt-1"
-                                                title="Denunciar Mensagem"
+                                                title={t('forum.reportMessage', 'Denunciar Mensagem')}
                                             >
                                                 <AlertTriangle size={10} />
                                             </button>
@@ -982,21 +982,21 @@ export const ForumView = ({ navigate }) => {
                         <div className="w-16 h-16 rounded-full bg-gray-800 overflow-hidden mx-auto mb-4 border-2 border-red-500">
                             <img src={getAvatarSrc(selectedContact.avatar_url)} alt="avatar" className="w-full h-full object-cover" />
                         </div>
-                        <h2 className="text-xl font-bold mb-2">Desafiar {selectedContact.username}</h2>
-                        <p className="text-sm text-gray-400 mb-4">Escolha o jogo e o valor da aposta. A senha é automática para garantir que só o convidado entre.</p>
+                        <h2 className="text-xl font-bold mb-2">{t('forum.challengeUserPrefix', 'Desafiar')} {selectedContact.username}</h2>
+                        <p className="text-sm text-gray-400 mb-4">{t('forum.challengeDesc', 'Escolha o jogo e o valor da aposta. A senha é automática para garantir que só o convidado entre.')}</p>
 
                         <div className="grid grid-cols-2 gap-3 mb-6">
                             <button
                                 onClick={() => setDuelGameType('twelve_doors')}
                                 className={`p-3 rounded-xl border font-bold text-sm transition-all ${duelGameType === 'twelve_doors' ? 'bg-purple-900/50 border-purple-500 text-white' : 'bg-gray-950 border-gray-700 text-gray-400 hover:border-gray-500'}`}
                             >
-                                12 Doors
+                                {t('forum.gameTwelveDoors', '12 Doors')}
                             </button>
                             <button
                                 onClick={() => setDuelGameType('hash_harvest')}
                                 className={`p-3 rounded-xl border font-bold text-sm transition-all ${duelGameType === 'hash_harvest' ? 'bg-purple-900/50 border-purple-500 text-white' : 'bg-gray-950 border-gray-700 text-gray-400 hover:border-gray-500'}`}
                             >
-                                Hash Harvest
+                                {t('forum.gameHashHarvest', 'Hash Harvest')}
                             </button>
                         </div>
                         
@@ -1008,7 +1008,7 @@ export const ForumView = ({ navigate }) => {
                                 onChange={e => setBetAmount(Number(e.target.value))}
                                 className="w-full bg-black border border-gray-700 rounded-xl p-3 text-center text-xl font-bold text-[#39FF14] outline-none focus:border-purple-500"
                             />
-                            <div className="text-xs text-gray-500 mt-2">Saldo Atual: {state.wallet.mph} MPH</div>
+                            <div className="text-xs text-gray-500 mt-2">{t('forum.currentBalance', 'Saldo Atual')}: {state.wallet.mph} MPH</div>
                         </div>
 
                         <button 
@@ -1033,27 +1033,27 @@ export const ForumView = ({ navigate }) => {
                             <X size={20} />
                         </button>
                         <h2 className="text-lg font-bold text-red-400 flex items-center gap-2 mb-4">
-                            <AlertTriangle size={20} /> Denunciar Conteúdo
+                            <AlertTriangle size={20} /> {t('forum.reportContentTitle', 'Denunciar Conteúdo')}
                         </h2>
                         <p className="text-sm text-gray-300 mb-4">
-                            Por favor, selecione o motivo da denúncia. Nossa equipe irá analisar e tomar as medidas necessárias.
+                            {t('forum.reportContentDesc', 'Por favor, selecione o motivo da denúncia. Nossa equipe irá analisar e tomar as medidas necessárias.')}
                         </p>
                         <select 
                             value={reportReason}
                             onChange={(e) => setReportReason(e.target.value)}
                             className="w-full bg-black border border-gray-700 rounded-xl p-3 text-white mb-6 focus:border-red-500 outline-none"
                         >
-                            <option value="Spam">Spam ou Propaganda</option>
-                            <option value="Ofensa">Ofensa ou Assédio</option>
-                            <option value="Conteúdo Inadequado">Conteúdo Inadequado</option>
-                            <option value="Fraude/Golpe">Tentativa de Fraude/Golpe</option>
-                            <option value="Outro">Outro motivo</option>
+                            <option value="Spam">{t('forum.reportReasonSpam', 'Spam ou Propaganda')}</option>
+                            <option value="Ofensa">{t('forum.reportReasonAbuse', 'Ofensa ou Assédio')}</option>
+                            <option value="Conteúdo Inadequado">{t('forum.reportReasonInappropriate', 'Conteúdo Inadequado')}</option>
+                            <option value="Fraude/Golpe">{t('forum.reportReasonFraud', 'Tentativa de Fraude/Golpe')}</option>
+                            <option value="Outro">{t('forum.reportReasonOther', 'Outro motivo')}</option>
                         </select>
                         <button 
                             onClick={handleReport}
                             className="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-colors"
                         >
-                            ENVIAR DENÚNCIA
+                            {t('forum.sendReport', 'ENVIAR DENÚNCIA')}
                         </button>
                     </div>
                 </div>
@@ -1066,7 +1066,7 @@ export const ForumView = ({ navigate }) => {
                         type="text" 
                         value={viewMode === 'detail' ? newComment : newChatMessage}
                         onChange={e => viewMode === 'detail' ? setNewComment(e.target.value) : setNewChatMessage(e.target.value)}
-                        placeholder={viewMode === 'detail' ? t('forum.writeComment', 'Escreve um comentário...') : 'Digite uma mensagem...'}
+                        placeholder={viewMode === 'detail' ? t('forum.writeComment', 'Escreve um comentário...') : t('forum.typeMessage', 'Digite uma mensagem...')}
                         className="flex-1 bg-black border border-gray-700 rounded-full px-4 py-2 text-sm text-white focus:border-purple-500 outline-none"
                         onKeyPress={e => e.key === 'Enter' && (viewMode === 'detail' ? handleCreateComment() : handleSendMessage())}
                     />
