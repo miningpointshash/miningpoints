@@ -10,6 +10,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import SupportAdmin from '../components/admin/SupportAdmin';
 import WithdrawalManager from '../components/admin/WithdrawalManager';
+import ForumReportsAdmin from '../components/admin/ForumReportsAdmin';
 import { AdminAuditLogList } from '../components/admin/AdminAuditLogList';
 
 // Componente para visualizar a rede de um usuário (Adaptado do TeamDashboard)
@@ -2163,6 +2164,16 @@ export const AdminView = ({ navigate }) => {
                          <MessageSquare size={16} className="mr-1" /> Atendimento
                     </Button>
                 )}
+                {isFinanceAdmin && (
+                    <Button 
+                        variant={activeTab === 'reports' ? 'default' : 'outline'} 
+                        onClick={() => setActiveTab('reports')}
+                        size="sm"
+                        className={activeTab === 'reports' ? 'bg-red-600' : ''}
+                    >
+                         <AlertTriangle size={16} className="mr-1" /> Fórum Denúncias
+                    </Button>
+                )}
             </div>
 
             {/* Content */}
@@ -2172,6 +2183,7 @@ export const AdminView = ({ navigate }) => {
                 {activeTab === 'bots' && renderBots()}
                 {activeTab === 'tournaments' && renderTournaments()}
                 {activeTab === 'settings' && renderSettings()}
+                {activeTab === 'reports' && <ForumReportsAdmin />}
                 {activeTab === 'withdrawals' && <WithdrawalManager currentAdmin={state.user} />}
                 {activeTab === 'support' && canAccessSupport && <SupportAdmin currentAdmin={state.user} />}
             </div>

@@ -1,6 +1,6 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { 
-  Bell, Globe, User, LogOut, Check, Home, Gamepad2, Zap, Wallet, Menu as MenuIcon, X, AlertTriangle
+  Bell, Globe, User, LogOut, Check, Home, Gamepad2, Zap, Wallet, Menu as MenuIcon, X, AlertTriangle, Users
 } from 'lucide-react';
 import { THEME } from './utils/theme';
 import { AVAILABLE_LANGUAGES } from './locales';
@@ -17,6 +17,7 @@ import { ArcadeView } from './views/Arcade';
 import { MenuView } from './views/Menu';
 import { AdminView } from './views/Admin';
 import { AuthView } from './views/Auth'; // Importa Auth
+import { ForumView } from './views/Forum'; // Importa Forum
 import { EmailWelcomeView } from './views/EmailWelcome';
 import { AccountSwitchView } from './views/AccountSwitch';
 import { clearReferralUsername, getReferralUsername, parseReferralFromLocation, setReferralUsername } from './utils/referral';
@@ -228,25 +229,15 @@ const Layout = () => {
             <img src="/assets/logo/logo_01.png" alt="Mining Points" className="h-full w-auto object-contain" />
         </div>
         <div className="flex items-center gap-3">
-             <button onClick={() => setNotificationsOpen(true)} className="relative hover:text-purple-400 transition-colors">
+            <button onClick={() => setNotificationsOpen(true)} className="relative hover:text-purple-400 transition-colors">
                 <Bell size={20} className={state.notifications.some(n => !n.read) ? "text-white" : "text-gray-400"} />
                 {state.notifications.some(n => !n.read) && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border-2 border-black"></span>}
             </button>
             <div className="relative">
-                <button onClick={() => setLanguageOpen(!isLanguageOpen)} className="relative hover:text-green-400 transition-colors">
-                    <Globe size={20} className="text-gray-400" />
+                <button onClick={() => setView('forum')} className={`relative hover:text-green-400 transition-colors ${view === 'forum' ? 'text-green-400' : 'text-gray-400'}`}>
+                    <Users size={20} />
                     <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>
                 </button>
-                {isLanguageOpen && (
-                    <div className="absolute top-full right-0 mt-2 w-48 bg-[#111111] border border-gray-800 rounded-xl shadow-xl z-50 overflow-hidden animate-fadeIn">
-                        {AVAILABLE_LANGUAGES.map(lang => (
-                            <button key={lang.code} onClick={() => { changeLanguage(lang.code); setLanguageOpen(false); }} className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between border-b border-gray-800 last:border-0 hover:bg-gray-800 ${state.user.language === lang.code ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
-                                <span className="flex items-center gap-2"><span>{lang.flag}</span><span>{lang.name}</span></span>
-                                {state.user.language === lang.code && <Check size={14}/>}
-                            </button>
-                        ))}
-                    </div>
-                )}
             </div>
             <div className="relative">
                 <button onClick={() => setProfileOpen(!isProfileOpen)} className="flex items-center gap-2 bg-gray-900 px-2 py-1 rounded-full border border-gray-700 hover:border-purple-500 transition-colors">
@@ -288,6 +279,7 @@ const Layout = () => {
         {view === 'invest' && <InvestView navigate={setView} />}
         {view === 'wallet' && <WalletView navigate={setView} />}
         {view === 'arcade' && <ArcadeView navigate={setView} />}
+        {view === 'forum' && <ForumView navigate={setView} />}
         {/* Proteção da Rota Admin */}
         {view === 'admin' && (state.user.role === 'admin_master' || state.user.role === 'admin_finance' || state.user.role === 'admin_partner') && <AdminView navigate={setView} />}
         {view.startsWith('menu') && <MenuView navigate={setView} initialTab={view.split(':')[1] || 'menu'} />}
