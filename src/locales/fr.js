@@ -145,6 +145,8 @@ export default {
     rankingsTitle: "Classement Mondial",
     monthly: "Mensuel",
     biweekly: "Bihebdomadaire",
+    rankModeVolume: "Volume",
+    rankModeNet: "Résultat",
     prizePool: "Cagnotte",
     estimatedPrize: "Prix Est.",
     tournamentsTitle: "Tournois et Événements",
@@ -158,6 +160,7 @@ export default {
     currentPool: "Cagnotte Actuelle",
     participate: "PARTICIPER",
     participants: "Participants",
+    yourPosition: "Votre position",
     comingSoon: "Bientôt",
     tournamentSplit: "50% Tirage • 50% Entreprise",
     ongDescription: "10% de tous les frais sont reversés à",
@@ -170,6 +173,7 @@ export default {
     upcoming: "À VENIR",
     live: "EN DIRECT",
     otherAmount: "Autre montant...",
+    minBetError: "Mise minimale : 10 MPH",
     privateRoom: "Salle Privée (Invitation par lien uniquement)"
   },
   auth: {

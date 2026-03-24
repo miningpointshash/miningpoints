@@ -503,6 +503,33 @@ export const AdminView = ({ navigate }) => {
     const [viewNetwork, setViewNetwork] = useState(null); // Visualizar rede do usuário
     const [viewPvpVolume, setViewPvpVolume] = useState(null);
 
+    const saveHashHarvestPeakSettings = async (next) => {
+        try {
+            const payload = {
+                p_enabled: Boolean(next?.hhPeakEnabled),
+                p_start_hour: Number(next?.hhPeakStartHour ?? 18),
+                p_end_hour: Number(next?.hhPeakEndHour ?? 23),
+                p_timezone: String(next?.hhPeakTimezone ?? 'America/Sao_Paulo')
+            };
+            const { data, error } = await supabase.rpc('admin_set_hash_harvest_peak_settings', payload);
+            if (error) throw error;
+            if (!data?.ok) throw new Error('Falha ao salvar agenda');
+            setState(prev => ({
+                ...prev,
+                botSettings: {
+                    ...(prev.botSettings || {}),
+                    hhPeakEnabled: Boolean(data.hhPeakEnabled),
+                    hhPeakStartHour: Number(data.hhPeakStartHour),
+                    hhPeakEndHour: Number(data.hhPeakEndHour),
+                    hhPeakTimezone: String(data.hhPeakTimezone || 'America/Sao_Paulo')
+                }
+            }));
+            addNotification('Agenda do Hash Harvest atualizada.', 'success');
+        } catch (e) {
+            addNotification(e?.message || 'Erro ao salvar agenda do Hash Harvest.', 'danger');
+        }
+    };
+
     const normalizeUsername = (value) => {
         const raw = String(value || '');
         const noDiacritics = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -1766,54 +1793,196 @@ export const AdminView = ({ navigate }) => {
 
     const renderBots = () => (
         <div className="space-y-4 pb-20">
-            <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-white">Gerenciar Bots (12 Contas)</h3>
-                <span className="text-xs text-gray-500 bg-gray-900 px-2 py-1 rounded">Total: {state.bots.length}</span>
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4">
+                <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-white text-lg">Gerenciar Bots</h3>
+                    <span className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded-md font-medium">Total: {state.bots.length}</span>
+                </div>
+                
+                <div className="flex flex-col gap-3 bg-gray-900/40 p-3 rounded-xl border border-gray-800/60 w-full lg:w-auto">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-gray-400 w-24 flex-shrink-0">Aplicar a todos:</span>
+                        <div className="flex gap-1">
+                            <Button
+                                size="xs"
+                                variant="outline"
+                                className="w-16 h-8 rounded-lg justify-center"
+                                onClick={() => { state.bots.forEach(b => updateBot(b.id, { max_bet_mph: 100 })); addNotification('Limite de todos: 100 MPH', 'success'); }}
+                            >100</Button>
+                            <Button
+                                size="xs"
+                                variant="outline"
+                                className="w-16 h-8 rounded-lg justify-center"
+                                onClick={() => { state.bots.forEach(b => updateBot(b.id, { max_bet_mph: 500 })); addNotification('Limite de todos: 500 MPH', 'success'); }}
+                            >500</Button>
+                            <Button
+                                size="xs"
+                                variant="outline"
+                                className="w-16 h-8 rounded-lg justify-center"
+                                onClick={() => { state.bots.forEach(b => updateBot(b.id, { max_bet_mph: 1000 })); addNotification('Limite de todos: 1000 MPH', 'success'); }}
+                            >1000</Button>
+                        </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 flex-nowrap">
+                        <span className="text-xs text-gray-400 w-24 flex-shrink-0">Hash Harvest:</span>
+                        <div className="flex gap-1 flex-nowrap overflow-x-auto">
+                            <Button
+                                size="xs"
+                                variant="outline"
+                                className="w-24 h-8 rounded-lg justify-center"
+                                onClick={() => { state.bots.forEach(b => updateBot(b.id, { hash_harvest_difficulty: 'hard' })); addNotification('HH de todos: Hard', 'success'); }}
+                            >Hard</Button>
+                            <Button
+                                size="xs"
+                                variant="outline"
+                                className="w-24 h-8 rounded-lg justify-center"
+                                onClick={() => { state.bots.forEach(b => updateBot(b.id, { hash_harvest_difficulty: 'extreme_hard' })); addNotification('HH de todos: Extreme Hard', 'success'); }}
+                            >Extreme Hard</Button>
+                        </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-gray-400 w-24 flex-shrink-0">Agenda (HH):</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <label className="flex items-center gap-2 h-8 text-xs text-gray-300 bg-black/50 px-2 rounded-lg border border-gray-800 cursor-pointer hover:bg-gray-800">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(state.botSettings?.hhPeakEnabled)}
+                                    className="rounded border-gray-600 bg-black"
+                                    onChange={(e) => {
+                                        saveHashHarvestPeakSettings({
+                                            hhPeakEnabled: e.target.checked,
+                                            hhPeakStartHour: state.botSettings?.hhPeakStartHour ?? 18,
+                                            hhPeakEndHour: state.botSettings?.hhPeakEndHour ?? 23,
+                                            hhPeakTimezone: state.botSettings?.hhPeakTimezone ?? 'America/Sao_Paulo'
+                                        });
+                                    }}
+                                />
+                                Pico
+                            </label>
+                            
+                            <div className="flex items-center gap-1 h-8 bg-black/50 rounded-lg border border-gray-800 px-1">
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={23}
+                                    value={Number(state.botSettings?.hhPeakStartHour ?? 18)}
+                                    className="w-10 h-8 bg-transparent text-center text-xs text-white outline-none"
+                                    onChange={(e) => setState(prev => ({ ...prev, botSettings: { ...(prev.botSettings || {}), hhPeakStartHour: Number(e.target.value || 0) } }))}
+                                    onBlur={() => saveHashHarvestPeakSettings(state.botSettings)}
+                                />
+                                <span className="text-xs text-gray-500">-</span>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={23}
+                                    value={Number(state.botSettings?.hhPeakEndHour ?? 23)}
+                                    className="w-10 h-8 bg-transparent text-center text-xs text-white outline-none"
+                                    onChange={(e) => setState(prev => ({ ...prev, botSettings: { ...(prev.botSettings || {}), hhPeakEndHour: Number(e.target.value || 0) } }))}
+                                    onBlur={() => saveHashHarvestPeakSettings(state.botSettings)}
+                                />
+                            </div>
+
+                            <select
+                                value={String(state.botSettings?.hhPeakTimezone || 'America/Sao_Paulo')}
+                                className="h-8 bg-black/50 border border-gray-800 rounded-lg px-2 text-xs text-white outline-none"
+                                onChange={(e) => { const tz = e.target.value; setState(prev => ({ ...prev, botSettings: { ...(prev.botSettings || {}), hhPeakTimezone: tz } })); saveHashHarvestPeakSettings({ ...state.botSettings, hhPeakTimezone: tz }); }}
+                            >
+                                <option value="America/Sao_Paulo">SP</option>
+                                <option value="UTC">UTC</option>
+                            </select>
+                            
+                            <div className="flex gap-1">
+                                <Button size="xs" variant="outline" className="h-8 rounded-lg" onClick={() => saveHashHarvestPeakSettings({ hhPeakEnabled: true, hhPeakStartHour: 18, hhPeakEndHour: 23, hhPeakTimezone: state.botSettings?.hhPeakTimezone ?? 'America/Sao_Paulo' })}>18-23</Button>
+                                <Button size="xs" variant="outline" className="h-8 rounded-lg" onClick={() => saveHashHarvestPeakSettings({ hhPeakEnabled: false, hhPeakStartHour: state.botSettings?.hhPeakStartHour ?? 18, hhPeakEndHour: state.botSettings?.hhPeakEndHour ?? 23, hhPeakTimezone: state.botSettings?.hhPeakTimezone ?? 'America/Sao_Paulo' })}>OFF</Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {state.bots.map(bot => (
-                <Card key={bot.id} className="bg-gray-900/50 border-gray-800 p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border-2 ${bot.active ? 'border-green-500' : 'border-red-500'}`}>
-                            <span className="font-bold text-xs">{bot.avatar.replace('mp_p', 'B')}</span>
-                        </div>
-                        <div>
-                            <p className="font-bold text-sm text-white">{bot.name}</p>
-                            <p className="text-xs font-mono text-purple-400">{bot.mph.toLocaleString()} MPH</p>
-                            {expandedBotId === bot.id && (
-                                <div className="mt-2 flex flex-wrap gap-1">
-                                    {(Array.isArray(bot.nicknames) && bot.nicknames.length > 0 ? bot.nicknames : [bot.name]).map((n) => (
-                                        <span key={n} className="text-[10px] px-2 py-0.5 rounded-full border border-pink-500/40 text-pink-300 bg-pink-900/10">
-                                            {n}
-                                        </span>
-                                    ))}
+                <Card key={bot.id} className="bg-gray-900/50 border-gray-800 p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border-2 ${bot.active ? 'border-green-500' : 'border-red-500'}`}>
+                                <span className="font-bold text-xs">{bot.avatar.replace('mp_p', 'B')}</span>
+                            </div>
+                            <div className="min-w-0">
+                                <p className="font-bold text-sm text-white leading-tight truncate">{bot.name}</p>
+                                <p className="text-xs font-mono text-purple-400 leading-tight">{bot.mph.toLocaleString()} MPH</p>
+                                <div className="mt-1">
+                                    <span className="inline-flex w-fit text-[10px] px-2 py-0.5 rounded-full border border-yellow-500/40 text-yellow-300 bg-yellow-900/10">
+                                        Limite atual: {Number(bot.max_bet_mph ?? 100)} MPH
+                                    </span>
                                 </div>
-                            )}
+                                {expandedBotId === bot.id && (
+                                    <div className="mt-2 flex flex-wrap gap-1">
+                                        {(Array.isArray(bot.nicknames) && bot.nicknames.length > 0 ? bot.nicknames : [bot.name]).map((n) => (
+                                            <span key={n} className="text-[10px] px-2 py-0.5 rounded-full border border-pink-500/40 text-pink-300 bg-pink-900/10">
+                                                {n}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                        <Button 
-                            size="xs" 
-                            variant={bot.active ? "default" : "outline"}
-                            className={bot.active ? "bg-green-600 hover:bg-green-700" : "border-red-500 text-red-500"}
-                            onClick={() => updateBot(bot.id, { active: !bot.active })}
-                        >
-                            {bot.active ? 'Ativo' : 'Inativo'}
-                        </Button>
-                        <Button 
-                            size="xs" 
-                            variant="ghost" 
-                            onClick={() => setBotRecharge(bot)}
-                        >
-                            <Edit2 size={12} /> Saldo
-                        </Button>
-                        <Button
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => setExpandedBotId(prev => (prev === bot.id ? null : bot.id))}
-                        >
-                            {expandedBotId === bot.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />} Nicknames
-                        </Button>
+                        <div className="flex flex-col w-full md:w-auto gap-3">
+                            <div className="flex items-center justify-end gap-2 flex-wrap">
+                                <Button 
+                                    size="xs" 
+                                    variant={bot.active ? "default" : "outline"}
+                                    className={`${bot.active ? "bg-green-600 hover:bg-green-700" : "border-red-500 text-red-500"} h-8 rounded-lg`}
+                                    onClick={() => updateBot(bot.id, { active: !bot.active })}
+                                >
+                                    {bot.active ? 'Ativo' : 'Inativo'}
+                                </Button>
+                                <Button 
+                                    size="xs" 
+                                    variant="ghost" 
+                                    className="h-8 rounded-lg"
+                                    onClick={() => setBotRecharge(bot)}
+                                >
+                                    <Edit2 size={12} /> Saldo
+                                </Button>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+                                    <label className="text-[10px] text-gray-400">Limite</label>
+                                    <input 
+                                        type="number"
+                                        min={10}
+                                        defaultValue={Number(bot.max_bet_mph ?? 100)}
+                                        className="w-20 h-8 bg-black border border-gray-700 rounded-lg px-2 text-[10px] text-white"
+                                        onBlur={(e) => {
+                                            const v = Number(e.target.value || 0);
+                                            if (!v || v < 10) return addNotification('Mínimo: 10 MPH', 'danger');
+                                            updateBot(bot.id, { max_bet_mph: v });
+                                            addNotification(`Limite atualizado: ${v} MPH`, 'success');
+                                        }}
+                                    />
+                                    <div className="flex items-center gap-2">
+                                        <Button size="xs" variant="outline" className="w-14 h-8 rounded-lg justify-center" onClick={() => { updateBot(bot.id, { max_bet_mph: 100 }); addNotification('Limite: 100 MPH', 'success'); }}>100</Button>
+                                        <Button size="xs" variant="outline" className="w-14 h-8 rounded-lg justify-center" onClick={() => { updateBot(bot.id, { max_bet_mph: 500 }); addNotification('Limite: 500 MPH', 'success'); }}>500</Button>
+                                        <Button size="xs" variant="outline" className="w-14 h-8 rounded-lg justify-center" onClick={() => { updateBot(bot.id, { max_bet_mph: 1000 }); addNotification('Limite: 1000 MPH', 'success'); }}>1000</Button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 flex-nowrap overflow-x-auto">
+                                    <span className="text-[10px] text-gray-400">Hash Harvest</span>
+                                    <Button size="xs" className="w-24 h-8 rounded-lg justify-center" variant={String(bot.hash_harvest_difficulty || 'hard') === 'hard' ? 'default' : 'outline'} onClick={() => { updateBot(bot.id, { hash_harvest_difficulty: 'hard' }); addNotification('HH: Hard', 'success'); }}>Hard</Button>
+                                    <Button size="xs" className="w-24 h-8 rounded-lg justify-center" variant={String(bot.hash_harvest_difficulty || 'hard') === 'extreme_hard' ? 'default' : 'outline'} onClick={() => { updateBot(bot.id, { hash_harvest_difficulty: 'extreme_hard' }); addNotification('HH: Extreme Hard', 'success'); }}>Extreme Hard</Button>
+                                </div>
+                            </div>
+                            <Button
+                                size="xs"
+                                variant="ghost"
+                                className="h-8 rounded-lg"
+                                onClick={() => setExpandedBotId(prev => (prev === bot.id ? null : bot.id))}
+                            >
+                                {expandedBotId === bot.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />} Nicknames
+                            </Button>
+                        </div>
                     </div>
                 </Card>
             ))}

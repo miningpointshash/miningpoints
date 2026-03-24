@@ -50,11 +50,15 @@ export const HashHarvestGame = React.memo(({ onGameOver, betAmount, playerChar, 
     useEffect(() => {
         if (isMultiplayer) return;
         switch(difficulty) {
+            case 'extreme_hard':
+                // Nível Ultra: mais rápido que extreme e com perseguição agressiva
+                aiConfig.current = { moveSpeed: 200, searchRadius: GRID_SIZE, errorRate: 0, predictive: true };
+                break;
             case 'extreme':
                 // Nível Deus: Muito rápido, busca total, zero erro, prioriza roubar itens
                 aiConfig.current = { moveSpeed: 300, searchRadius: GRID_SIZE, errorRate: 0, predictive: true };
                 break;
-            default: // hard (padrão agora é hard)
+            default: // hard
                 // Mais agressivo: raio de busca total, quase sem erros, rápido
                 aiConfig.current = { moveSpeed: 450, searchRadius: GRID_SIZE, errorRate: 0.02, predictive: true };
         }

@@ -71,18 +71,24 @@ const INITIAL_STATE = {
   miningHistory: [],
   gameHistory: [], // Histórico de partidas
   rankings: {
-    monthly: { pool: 12500, users: [
-      { id: 1, name: 'CryptoKing', score: 15400, avatar: 'mp_p3' },
-      { id: 2, name: 'MinerX', score: 12300, avatar: 'mp_p4' },
-      { id: 3, name: 'BitHunter', score: 9800, avatar: 'mp_p2' },
-      { id: 4, name: 'SatoshiFan', score: 8500, avatar: 'mp_p5' },
-      { id: 5, name: 'BlockMaster', score: 7200, avatar: 'mp_p6' },
-    ], participants: 0 },
-    biweekly: { pool: 4200, users: [
-      { id: 1, name: 'SpeedRacer', score: 5400, avatar: 'mp_p7' },
-      { id: 2, name: 'CryptoKing', score: 4800, avatar: 'mp_p3' },
-      { id: 3, name: 'LuckyStrike', score: 3200, avatar: 'mp_p1' },
-    ], participants: 0 }
+    monthly: {
+      volume: { pool: 12500, users: [
+        { id: 1, name: 'CryptoKing', score: 15400, avatar: 'mp_p3' },
+        { id: 2, name: 'MinerX', score: 12300, avatar: 'mp_p4' },
+        { id: 3, name: 'BitHunter', score: 9800, avatar: 'mp_p2' },
+        { id: 4, name: 'SatoshiFan', score: 8500, avatar: 'mp_p5' },
+        { id: 5, name: 'BlockMaster', score: 7200, avatar: 'mp_p6' },
+      ], participants: 0, me: null },
+      net: { pool: 12500, users: [], participants: 0, me: null }
+    },
+    biweekly: {
+      volume: { pool: 4200, users: [
+        { id: 1, name: 'SpeedRacer', score: 5400, avatar: 'mp_p7' },
+        { id: 2, name: 'CryptoKing', score: 4800, avatar: 'mp_p3' },
+        { id: 3, name: 'LuckyStrike', score: 3200, avatar: 'mp_p1' },
+      ], participants: 0, me: null },
+      net: { pool: 4200, users: [], participants: 0, me: null }
+    }
   },
   tournaments: {
     pool: 15000,
@@ -100,6 +106,12 @@ const INITIAL_STATE = {
   bots: [
     ...BOT_CATALOG,
   ],
+  botSettings: {
+    hhPeakEnabled: false,
+    hhPeakStartHour: 18,
+    hhPeakEndHour: 23,
+    hhPeakTimezone: "America/Sao_Paulo"
+  },
   gameStats: {
     totalMatches: 0,
     wins: 0,
@@ -329,25 +341,45 @@ export const AppProvider = ({ children }) => {
              }));
 
                 try {
-                    const [{ data: meta }, { data: monthly }, { data: biweekly }] = await Promise.all([
+                    const [{ data: meta }, { data: monthlyVol }, { data: biweeklyVol }, { data: monthlyNet }, { data: biweeklyNet }] = await Promise.all([
                         supabase.rpc('get_arcade_meta_snapshot'),
-                        supabase.rpc('get_pvp_ranking_snapshot', { p_period: 'monthly', p_limit: 10 }),
-                        supabase.rpc('get_pvp_ranking_snapshot', { p_period: 'biweekly', p_limit: 10 })
+                        supabase.rpc('get_pvp_ranking_snapshot', { p_period: 'monthly', p_limit: 10, p_mode: 'volume' }),
+                        supabase.rpc('get_pvp_ranking_snapshot', { p_period: 'biweekly', p_limit: 10, p_mode: 'volume' }),
+                        supabase.rpc('get_pvp_ranking_snapshot', { p_period: 'monthly', p_limit: 10, p_mode: 'net' }),
+                        supabase.rpc('get_pvp_ranking_snapshot', { p_period: 'biweekly', p_limit: 10, p_mode: 'net' })
                     ]);
 
-                    if (meta?.ok || monthly?.ok || biweekly?.ok) {
+                    if (meta?.ok || monthlyVol?.ok || biweeklyVol?.ok || monthlyNet?.ok || biweeklyNet?.ok) {
                         setState(prev => ({
                             ...prev,
                             rankings: {
                                 monthly: {
-                                    pool: Number(monthly?.pool ?? meta?.rankings?.monthly_pool ?? prev.rankings.monthly.pool ?? 0),
-                                    participants: Number(monthly?.participants ?? 0),
-                                    users: Array.isArray(monthly?.users) ? monthly.users : prev.rankings.monthly.users
+                                    volume: {
+                                        pool: Number(monthlyVol?.pool ?? meta?.rankings?.monthly_pool ?? prev.rankings.monthly.volume.pool ?? 0),
+                                        participants: Number(monthlyVol?.participants ?? 0),
+                                        users: Array.isArray(monthlyVol?.users) ? monthlyVol.users : prev.rankings.monthly.volume.users,
+                                        me: monthlyVol?.me ?? prev.rankings.monthly.volume.me ?? null
+                                    },
+                                    net: {
+                                        pool: Number(monthlyNet?.pool ?? meta?.rankings?.monthly_pool ?? prev.rankings.monthly.net.pool ?? 0),
+                                        participants: Number(monthlyNet?.participants ?? 0),
+                                        users: Array.isArray(monthlyNet?.users) ? monthlyNet.users : prev.rankings.monthly.net.users,
+                                        me: monthlyNet?.me ?? prev.rankings.monthly.net.me ?? null
+                                    }
                                 },
                                 biweekly: {
-                                    pool: Number(biweekly?.pool ?? meta?.rankings?.biweekly_pool ?? prev.rankings.biweekly.pool ?? 0),
-                                    participants: Number(biweekly?.participants ?? 0),
-                                    users: Array.isArray(biweekly?.users) ? biweekly.users : prev.rankings.biweekly.users
+                                    volume: {
+                                        pool: Number(biweeklyVol?.pool ?? meta?.rankings?.biweekly_pool ?? prev.rankings.biweekly.volume.pool ?? 0),
+                                        participants: Number(biweeklyVol?.participants ?? 0),
+                                        users: Array.isArray(biweeklyVol?.users) ? biweeklyVol.users : prev.rankings.biweekly.volume.users,
+                                        me: biweeklyVol?.me ?? prev.rankings.biweekly.volume.me ?? null
+                                    },
+                                    net: {
+                                        pool: Number(biweeklyNet?.pool ?? meta?.rankings?.biweekly_pool ?? prev.rankings.biweekly.net.pool ?? 0),
+                                        participants: Number(biweeklyNet?.participants ?? 0),
+                                        users: Array.isArray(biweeklyNet?.users) ? biweeklyNet.users : prev.rankings.biweekly.net.users,
+                                        me: biweeklyNet?.me ?? prev.rankings.biweekly.net.me ?? null
+                                    }
                                 }
                             },
                             tournaments: {
@@ -358,6 +390,12 @@ export const AppProvider = ({ children }) => {
                                 ...prev.ong,
                                 pool: Number(meta?.ong?.pool ?? prev.ong.pool ?? 0),
                                 totalDonated: Number(meta?.ong?.totalDonated ?? prev.ong.totalDonated ?? 0)
+                            },
+                            botSettings: {
+                                hhPeakEnabled: Boolean(meta?.bots?.hhPeakEnabled ?? prev.botSettings.hhPeakEnabled ?? false),
+                                hhPeakStartHour: Number(meta?.bots?.hhPeakStartHour ?? prev.botSettings.hhPeakStartHour ?? 18),
+                                hhPeakEndHour: Number(meta?.bots?.hhPeakEndHour ?? prev.botSettings.hhPeakEndHour ?? 23),
+                                hhPeakTimezone: String(meta?.bots?.hhPeakTimezone ?? prev.botSettings.hhPeakTimezone ?? 'America/Sao_Paulo')
                             }
                         }));
                     }
@@ -369,7 +407,7 @@ export const AppProvider = ({ children }) => {
                 try {
                     const { data: botsRows } = await supabase
                         .from('system_bots')
-                        .select('id, active, mph, nicknames');
+                        .select('id, active, mph, nicknames, avatar, max_bet_mph, hash_harvest_difficulty');
                     if (Array.isArray(botsRows) && botsRows.length > 0) {
                         const map = new Map(botsRows.map(r => [r.id, r]));
                         setState(prev => ({
@@ -381,7 +419,10 @@ export const AppProvider = ({ children }) => {
                                     ...tpl,
                                     active: typeof row.active === 'boolean' ? row.active : tpl.active,
                                     mph: Number(row.mph ?? tpl.mph ?? 0),
-                                    nicknames: Array.isArray(row.nicknames) ? row.nicknames : tpl.nicknames
+                                    nicknames: Array.isArray(row.nicknames) ? row.nicknames : tpl.nicknames,
+                                    avatar: row.avatar ?? tpl.avatar,
+                                    max_bet_mph: Number(row.max_bet_mph ?? tpl.max_bet_mph ?? 100),
+                                    hash_harvest_difficulty: row.hash_harvest_difficulty ?? tpl.hash_harvest_difficulty ?? 'hard'
                                 };
                             })
                         }));
@@ -726,10 +767,50 @@ export const AppProvider = ({ children }) => {
       }
   };
 
-  const getNextBotDifficulty = () => {
-    // Ciclo Agressivo: Hard -> Extreme -> Hard -> Extreme
+  const getHourInTimeZone = (timeZone) => {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone, hour: '2-digit', hour12: false }).formatToParts(new Date());
+      const h = parts.find(p => p.type === 'hour')?.value;
+      const n = Number(h);
+      return Number.isFinite(n) ? n : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const isHourInWindow = (hour, startHour, endHour) => {
+    const h = Number(hour);
+    const s = Number(startHour);
+    const e = Number(endHour);
+    if (![h, s, e].every(Number.isFinite)) return false;
+    if (s === e) return true;
+    if (s < e) return h >= s && h < e;
+    return h >= s || h < e;
+  };
+
+  const getNextBotDifficulty = (gameType, botId) => {
+    if (gameType === 'hash_harvest') {
+      const bot = (state.bots || []).find(b => b.id === botId);
+      const mode = String(bot?.hash_harvest_difficulty || 'hard').toLowerCase();
+      const peakEnabled = Boolean(state.botSettings?.hhPeakEnabled);
+      const peakStart = Number(state.botSettings?.hhPeakStartHour ?? 18);
+      const peakEnd = Number(state.botSettings?.hhPeakEndHour ?? 23);
+      const tz = String(state.botSettings?.hhPeakTimezone ?? 'America/Sao_Paulo');
+
+      if (mode === 'extreme_hard') {
+        if (!peakEnabled) return 'extreme_hard';
+        const hour = getHourInTimeZone(tz);
+        return isHourInWindow(hour, peakStart, peakEnd) ? 'extreme_hard' : 'hard';
+      }
+      if (mode === 'extreme') {
+        if (!peakEnabled) return 'extreme';
+        const hour = getHourInTimeZone(tz);
+        return isHourInWindow(hour, peakStart, peakEnd) ? 'extreme' : 'hard';
+      }
+      return 'hard';
+    }
     const matches = state.gameStats?.totalMatches || 0;
-    return matches % 2 === 0 ? 'hard' : 'extreme';
+    return matches % 2 === 0 ? 'medium' : 'hard';
   };
 
   const updateBot = (botId, updates) => {
@@ -743,7 +824,10 @@ export const AppProvider = ({ children }) => {
         id: botId,
         active: updates.active ?? bot.active ?? true,
         mph: updates.mph ?? bot.mph ?? 0,
-        nicknames: Array.isArray(bot.nicknames) ? bot.nicknames : null
+        nicknames: Array.isArray(bot.nicknames) ? bot.nicknames : null,
+        avatar: updates.avatar ?? bot.avatar ?? null,
+        max_bet_mph: updates.max_bet_mph ?? bot.max_bet_mph ?? 100,
+        hash_harvest_difficulty: updates.hash_harvest_difficulty ?? bot.hash_harvest_difficulty ?? 'hard'
       };
       supabase.from('system_bots').upsert([payload]).then(() => {}).catch(() => {});
     } catch {}

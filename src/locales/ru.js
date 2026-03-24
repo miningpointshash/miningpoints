@@ -145,6 +145,8 @@ export default {
     rankingsTitle: "Глобальный Рейтинг",
     monthly: "Ежемесячно",
     biweekly: "Раз в две недели",
+    rankModeVolume: "Объём",
+    rankModeNet: "Результат",
     prizePool: "Призовой Фонд",
     estimatedPrize: "Ожид. Приз",
     tournamentsTitle: "Турниры и События",
@@ -156,6 +158,7 @@ export default {
     totalDonated: "Всего Пожертвовано",
     currentPool: "Текущий Фонд",
     participants: "Участников",
+    yourPosition: "Ваше место",
     comingSoon: "Скоро",
     tournamentSplit: "50% Розыгрыш • 50% Компания",
     ongDescription: "10% от всех сборов пожертвованы",
@@ -169,6 +172,7 @@ export default {
     upcoming: "СКОРО",
     live: "В ЭФИРЕ",
     otherAmount: "Другая сумма...",
+    minBetError: "Минимальная ставка: 10 MPH",
     privateRoom: "Приватная комната (Только по ссылке)"
   },
   auth: {

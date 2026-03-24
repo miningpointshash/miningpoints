@@ -4,9 +4,11 @@ import { Card } from '../ui/Card';
 
 export const PvpRankings = ({ rankings, t }) => {
     const [tab, setTab] = useState('monthly'); // 'monthly', 'biweekly'
+    const [mode, setMode] = useState('volume'); // 'volume', 'net'
 
-    const currentRanking = tab === 'monthly' ? rankings.monthly : rankings.biweekly;
-    const pool = currentRanking.pool;
+    const currentGroup = tab === 'monthly' ? rankings.monthly : rankings.biweekly;
+    const currentRanking = currentGroup?.[mode] || currentGroup?.volume || { pool: 0, users: [], participants: 0, me: null };
+    const pool = Number(currentRanking.pool || 0);
     const getAvatarSrc = (value) => {
         const raw = String(value || '').trim();
         if (!raw) return '/assets/persona/mp_p6.svg';
@@ -28,7 +30,22 @@ export const PvpRankings = ({ rankings, t }) => {
                 <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <Trophy className="text-yellow-400" /> {t('arcade.rankingsTitle') || 'Rankings'}
                 </h3>
-                <div className="flex bg-gray-800 rounded-lg p-1">
+                <div className="flex items-center gap-2">
+                    <div className="flex bg-gray-800 rounded-lg p-1">
+                        <button
+                            onClick={() => setMode('volume')}
+                            className={`px-3 py-1 text-xs rounded transition-all ${mode === 'volume' ? 'bg-purple-500 text-black font-bold' : 'text-gray-400'}`}
+                        >
+                            {t('arcade.rankModeVolume') || 'Volume'}
+                        </button>
+                        <button
+                            onClick={() => setMode('net')}
+                            className={`px-3 py-1 text-xs rounded transition-all ${mode === 'net' ? 'bg-purple-500 text-black font-bold' : 'text-gray-400'}`}
+                        >
+                            {t('arcade.rankModeNet') || 'Resultado'}
+                        </button>
+                    </div>
+                    <div className="flex bg-gray-800 rounded-lg p-1">
                     <button 
                         onClick={() => setTab('monthly')}
                         className={`px-3 py-1 text-xs rounded transition-all ${tab === 'monthly' ? 'bg-yellow-500 text-black font-bold' : 'text-gray-400'}`}
@@ -41,6 +58,7 @@ export const PvpRankings = ({ rankings, t }) => {
                     >
                         {t('arcade.biweekly') || 'Quinzenal'}
                     </button>
+                </div>
                 </div>
             </div>
 
@@ -72,8 +90,17 @@ export const PvpRankings = ({ rankings, t }) => {
                                     <img src={getAvatarSrc(user.avatar || 'mp_p6')} alt="avatar" className="w-full h-full object-cover" />
                                 </div>
                                 <div>
-                                    <p className="text-sm font-bold text-white">{user.name}</p>
-                                    <p className="text-[10px] text-gray-400">{user.score} pts</p>
+                                    <p className="text-sm font-bold text-white flex items-center gap-2">
+                                        <span>{user.name}</span>
+                                        {user.botBadge && (
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-900/10 font-mono">
+                                                {user.botBadge}
+                                            </span>
+                                        )}
+                                    </p>
+                                    <p className="text-[10px] text-gray-400 font-mono">
+                                        {mode === 'net' ? (Number(user.score || 0) > 0 ? '+' : '') : ''}{Number(user.score || 0).toFixed(0)} MPH
+                                    </p>
                                 </div>
                             </div>
                             <div className="text-right">
@@ -84,6 +111,35 @@ export const PvpRankings = ({ rankings, t }) => {
                     );
                 })}
             </div>
+
+            {currentRanking.me && (
+                <div className="mt-4 bg-black/40 border border-gray-800 rounded-lg p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-8">
+                            <span className="font-mono font-bold text-gray-500 w-6 text-center">
+                                {Number(currentRanking.me.rank || 0)}º
+                            </span>
+                        </div>
+                        <div className="w-8 h-8 rounded-full bg-gray-700 overflow-hidden border border-gray-600">
+                            <img src={getAvatarSrc(currentRanking.me.avatar || 'mp_p6')} alt="avatar" className="w-full h-full object-cover" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-bold text-white flex items-center gap-2">
+                                <span>{currentRanking.me.name}</span>
+                                {currentRanking.me.botBadge && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-900/10 font-mono">
+                                        {currentRanking.me.botBadge}
+                                    </span>
+                                )}
+                                <span className="text-[10px] text-gray-400">{t('arcade.yourPosition') || 'Sua posição'}</span>
+                            </p>
+                            <p className="text-[10px] text-gray-400 font-mono">
+                                {mode === 'net' ? (Number(currentRanking.me.score || 0) > 0 ? '+' : '') : ''}{Number(currentRanking.me.score || 0).toFixed(0)} MPH
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
         </Card>
     );
 };

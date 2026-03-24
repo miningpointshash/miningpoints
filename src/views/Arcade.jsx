@@ -255,10 +255,15 @@ export const ArcadeView = () => {
                 const playerName = nicknames[currentIdx % nicknames.length] || bot.name;
                 botAliasIndexRef.current[bot.id] = currentIdx + 1;
 
+                const presets = [100, 500, 1000];
+                const cap = Number(bot.max_bet_mph ?? 100);
+                const allowed = presets.filter(v => v <= cap);
+                const betPick = allowed.length > 0 ? allowed[Math.floor(Math.random() * allowed.length)] : 100;
+
                 return {
                     id: `bot_game_${bot.id}_${Date.now()}`,
                     player: playerName,
-                    bet: [100, 500, 1000][Math.floor(Math.random() * 3)],
+                    bet: betPick,
                     avatar: bot.avatar,
                     isBot: true,
                     botId: bot.id
@@ -1147,7 +1152,9 @@ export const ArcadeView = () => {
                 p_bet_amount_mph: pvpConfig.bet,
                 p_player_score: Number(finalScore.player || 0),
                 p_bot_score: Number(finalScore.bot || 0),
-                p_player_avatar: pvpConfig.char
+                p_player_avatar: pvpConfig.char,
+                p_bot_id: pvpConfig.botId || null,
+                p_bot_nickname: pvpConfig.opponentName || null
             });
 
             if (error) throw error;
@@ -1440,7 +1447,7 @@ export const ArcadeView = () => {
                                         challengerAvatar={pvpConfig.challengerAvatar || null}
                                         creatorName={pvpConfig.creatorName || null}
                                         challengerName={pvpConfig.challengerName || null}
-                                        difficulty={getNextBotDifficulty ? getNextBotDifficulty() : 'hard'}
+                                        difficulty={getNextBotDifficulty ? getNextBotDifficulty('hash_harvest', pvpConfig.botId) : 'hard'}
                                         isMuted={isMuted}
                                     />
                                 ) : (
@@ -1458,7 +1465,7 @@ export const ArcadeView = () => {
                                         challengerAvatar={pvpConfig.challengerAvatar || null}
                                         creatorName={pvpConfig.creatorName || null}
                                         challengerName={pvpConfig.challengerName || null}
-                                        difficulty={getNextBotDifficulty ? getNextBotDifficulty() : 'medium'}
+                                        difficulty={getNextBotDifficulty ? getNextBotDifficulty('twelve_doors', pvpConfig.botId) : 'medium'}
                                         isMuted={isMuted}
                                     />
                                 )}
@@ -1580,8 +1587,11 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
     const handleCustomBetChange = (e) => {
         const val = e.target.value;
         setCustomBet(val);
-        if (val && !isNaN(val)) {
-            setPvpConfig({ ...pvpConfig, bet: parseFloat(val) });
+        const n = parseFloat(val);
+        if (!isNaN(n)) {
+            setPvpConfig({ ...pvpConfig, bet: n });
+        } else {
+            setPvpConfig({ ...pvpConfig, bet: 0 });
         }
     };
 
@@ -1665,10 +1675,14 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
                         placeholder={t('arcade.otherAmount')}
                         value={customBet}
                         onChange={handleCustomBetChange}
+                        min={10}
                         className="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-white text-sm focus:border-purple-500 outline-none font-mono"
                     />
                     <span className="absolute right-3 top-3 text-gray-500 text-xs font-bold">MPH</span>
                 </div>
+                {customBet && Number(pvpConfig.bet || 0) < 10 && (
+                    <p className="text-[10px] text-red-400 mb-2">{t('arcade.minBetError', 'Aposta mínima: 10 MPH')}</p>
+                )}
                 
                 <div className="flex items-center gap-2 mb-4 bg-black/30 p-2 rounded border border-gray-800">
                     <input 
@@ -1715,7 +1729,7 @@ const PvpLobby = ({ pvpConfig, setPvpConfig, onCreate, onJoin, userBalance, isSe
 
             <Button 
                 onClick={() => { playClick(); onCreate(); }}
-                disabled={isSearching || pvpConfig.bet <= 0 || (isPrivate && privatePassword.trim().length < 4)}
+                disabled={isSearching || pvpConfig.bet < 10 || (isPrivate && privatePassword.trim().length < 4)}
                 className={`w-full py-4 text-lg font-black bg-gradient-to-r from-purple-600 to-pink-600 border-0 shadow-lg hover:scale-[1.02] transition-transform ${isSearching ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
                 {isSearching ? t('arcade.creating') : t('arcade.createRoom')}

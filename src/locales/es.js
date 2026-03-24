@@ -141,6 +141,8 @@ export default {
     rankingsTitle: "Clasificación Global",
     monthly: "Mensual",
     biweekly: "Quincenal",
+    rankModeVolume: "Volumen",
+    rankModeNet: "Resultado",
     prizePool: "Fondo de Premios",
     estimatedPrize: "Premio Est.",
     tournamentsTitle: "Torneos y Eventos",
@@ -150,6 +152,7 @@ export default {
     tournamentsPool: "Fondo Acumulado",
     entryFee: "Entrada",
     participants: "Participantes",
+    yourPosition: "Tu posición",
     comingSoon: "Próximamente",
     tournamentSplit: "50% Sorteo • 50% Empresa",
     ongDescription: "10% de todas las tarifas se donan a",
@@ -166,6 +169,7 @@ export default {
     upcoming: "PRÓXIMAMENTE",
     live: "EN VIVO",
     otherAmount: "Otro monto...",
+    minBetError: "Apuesta mínima: 10 MPH",
     privateRoom: "Sala Privada (Solo invitados por enlace)"
   },
   auth: {
