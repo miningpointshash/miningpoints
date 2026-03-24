@@ -112,10 +112,14 @@ export const ForumView = ({ navigate }) => {
 
     const openArcadeRoom = (roomId, password, autoJoin) => {
         const url = new URL(window.location.href);
+        url.pathname = '/';
         url.searchParams.set('view', 'arcade');
         url.searchParams.set('room', roomId);
         if (password) url.searchParams.set('pwd', password);
+        else url.searchParams.delete('pwd');
         if (autoJoin) url.searchParams.set('auto', '1');
+        else url.searchParams.delete('auto');
+        url.searchParams.delete('auth');
         history.replaceState(null, '', url.toString());
         navigate('arcade');
     };

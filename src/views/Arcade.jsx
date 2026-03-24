@@ -368,23 +368,32 @@ export const ArcadeView = () => {
         const cleanRoom = extractUuid(room);
         if (!cleanRoom) return;
 
-        const pwd = String(params.get('pwd') || '').trim();
+        const pwdFromUrl = String(params.get('pwd') || '').trim();
         const auto = params.get('auto') === '1';
 
         const initFromLink = async () => {
             try {
-                const { data: dbRoom, error } = await supabase
-                    .from('pvp_rooms')
-                    .select('id,status,creator_id,opponent_id,creator_avatar,opponent_avatar,game_type,bet_amount_mph,is_private')
-                    .eq('id', cleanRoom)
-                    .maybeSingle();
-                if (error) throw error;
-                if (!dbRoom?.id) return;
-
                 setTab('pvp');
                 setPvpView('lobby');
 
-                if (dbRoom.creator_id === myId) {
+                let pwd = pwdFromUrl;
+                let dbRoom = null;
+                try {
+                    const { data, error } = await supabase
+                        .from('pvp_rooms')
+                        .select('id,status,creator_id,opponent_id,creator_avatar,opponent_avatar,game_type,bet_amount_mph,is_private')
+                        .eq('id', cleanRoom)
+                        .maybeSingle();
+                    if (error) throw error;
+                    dbRoom = data || null;
+                } catch {}
+
+                if (!pwd) {
+                    const meta = await getDuelMeta(cleanRoom);
+                    pwd = String(meta?.duel_password || '').trim();
+                }
+
+                if (dbRoom?.id && dbRoom.creator_id === myId) {
                     setPvpConfig(prev => ({
                         ...prev,
                         roomPassword: pwd || prev.roomPassword || ''
@@ -449,9 +458,11 @@ export const ArcadeView = () => {
                         addNotification('Desafio aceito! Preparando arena...', 'success');
                         return;
                     } catch (e) {
+                        setJoinPassword(pwd || '');
                         setShowJoinModal(true);
                     }
                 } else {
+                    setJoinPassword(pwd || '');
                     setShowJoinModal(true);
                 }
             } catch (e) {
@@ -521,6 +532,8 @@ export const ArcadeView = () => {
     const clearRoomFromUrl = () => {
         const url = new URL(window.location.href);
         url.searchParams.delete('room');
+        url.searchParams.delete('pwd');
+        url.searchParams.delete('auto');
         history.replaceState(null, '', url.toString());
     };
 
