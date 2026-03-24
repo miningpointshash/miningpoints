@@ -1793,13 +1793,13 @@ export const AdminView = ({ navigate }) => {
 
     const renderBots = () => (
         <div className="space-y-4 pb-20">
-            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4">
+            <div className="mb-4 space-y-3">
                 <div className="flex items-center gap-2">
                     <h3 className="font-bold text-white text-lg">Gerenciar Bots</h3>
                     <span className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded-md font-medium">Total: {state.bots.length}</span>
                 </div>
-                
-                <div className="flex flex-col gap-3 bg-gray-900/40 p-3 rounded-xl border border-gray-800/60 w-full lg:w-auto">
+
+                <div className="flex flex-col gap-3 bg-gray-900/40 p-4 rounded-xl border border-gray-800/60 w-full">
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs text-gray-400 w-24 flex-shrink-0">Aplicar a todos:</span>
                         <div className="flex gap-1">

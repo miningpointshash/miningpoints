@@ -1147,18 +1147,43 @@ export const ArcadeView = () => {
         if (isSettling) return;
         setIsSettling(true);
         try {
-            const { data, error } = await supabase.rpc('pvp_bot_match_settle', {
+            const basePayload = {
                 p_game_type: pvpConfig.gameType,
                 p_bet_amount_mph: pvpConfig.bet,
                 p_player_score: Number(finalScore.player || 0),
                 p_bot_score: Number(finalScore.bot || 0),
-                p_player_avatar: pvpConfig.char,
-                p_bot_id: pvpConfig.botId || null,
-                p_bot_nickname: pvpConfig.opponentName || null
-            });
+                p_player_avatar: pvpConfig.char
+            };
 
-            if (error) throw error;
+            let usedFallback = false;
+            let data;
+
+            try {
+                const res = await supabase.rpc('pvp_bot_match_settle', {
+                    ...basePayload,
+                    p_bot_id: pvpConfig.botId || null,
+                    p_bot_nickname: pvpConfig.opponentName || null
+                });
+                if (res.error) throw res.error;
+                data = res.data;
+            } catch (e) {
+                const msg = String(e?.message || e || '');
+                const isSchemaCacheMismatch =
+                    msg.includes('Could not find the function public.pvp_bot_match_settle') ||
+                    msg.includes('schema cache');
+
+                if (!isSchemaCacheMismatch) throw e;
+
+                usedFallback = true;
+                const res = await supabase.rpc('pvp_bot_match_settle', basePayload);
+                if (res.error) throw res.error;
+                data = res.data;
+            }
+
             if (!data?.ok) throw new Error(data?.error || 'Falha ao processar resultado.');
+            if (usedFallback) {
+                addNotification('Servidor ainda não foi atualizado com a nova função de bots. Aplique as migrations do Supabase para evitar esse aviso.', 'warning');
+            }
 
             const outcome = data.outcome || 'loss';
             const prize = Number(data.prize_mph || 0);
