@@ -405,11 +405,11 @@ export const AppProvider = ({ children }) => {
                 
                 // Carregar estado dos Bots do Supabase (se existir)
                 try {
-                    const { data: botsRows } = await supabase
-                        .from('system_bots')
-                        .select('id, active, mph, nicknames, avatar, max_bet_mph, hash_harvest_difficulty');
-                    if (Array.isArray(botsRows) && botsRows.length > 0) {
-                        const map = new Map(botsRows.map(r => [r.id, r]));
+                    const { data: publicSnap } = await supabase.rpc('get_bots_public_snapshot');
+                    const publicRows = Array.isArray(publicSnap?.bots) ? publicSnap.bots : [];
+
+                    if (publicRows.length > 0) {
+                        const map = new Map(publicRows.map(r => [r.id, r]));
                         setState(prev => ({
                             ...prev,
                             bots: prev.bots.map(tpl => {
@@ -418,7 +418,6 @@ export const AppProvider = ({ children }) => {
                                 return {
                                     ...tpl,
                                     active: typeof row.active === 'boolean' ? row.active : tpl.active,
-                                    mph: Number(row.mph ?? tpl.mph ?? 0),
                                     nicknames: Array.isArray(row.nicknames) ? row.nicknames : tpl.nicknames,
                                     avatar: row.avatar ?? tpl.avatar,
                                     max_bet_mph: Number(row.max_bet_mph ?? tpl.max_bet_mph ?? 100),
@@ -426,6 +425,27 @@ export const AppProvider = ({ children }) => {
                                 };
                             })
                         }));
+                    }
+
+                    const isAdminRole = ['admin_master', 'admin_finance', 'admin_partner', 'support_1', 'support_2'].includes(profile?.role || 'user');
+                    if (isAdminRole) {
+                        const { data: botsRows } = await supabase
+                            .from('system_bots')
+                            .select('id, mph');
+                        if (Array.isArray(botsRows) && botsRows.length > 0) {
+                            const map = new Map(botsRows.map(r => [r.id, r]));
+                            setState(prev => ({
+                                ...prev,
+                                bots: prev.bots.map(tpl => {
+                                    const row = map.get(tpl.id);
+                                    if (!row) return tpl;
+                                    return {
+                                        ...tpl,
+                                        mph: Number(row.mph ?? tpl.mph ?? 0)
+                                    };
+                                })
+                            }));
+                        }
                     }
                 } catch (e) {
                     console.error('Erro ao carregar bots do Supabase:', e);

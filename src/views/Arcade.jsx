@@ -238,6 +238,38 @@ export const ArcadeView = () => {
     useEffect(() => {
         if (tab !== 'pvp') return;
         if (pvpState !== 'lobby') return;
+        let alive = true;
+        const refresh = async () => {
+            try {
+                const { data } = await supabase.rpc('get_bots_public_snapshot');
+                const rows = Array.isArray(data?.bots) ? data.bots : [];
+                if (!alive || rows.length === 0) return;
+                const map = new Map(rows.map(r => [r.id, r]));
+                setState(prev => ({
+                    ...prev,
+                    bots: prev.bots.map(tpl => {
+                        const row = map.get(tpl.id);
+                        if (!row) return tpl;
+                        return {
+                            ...tpl,
+                            active: Boolean(row.active),
+                            nicknames: Array.isArray(row.nicknames) ? row.nicknames : tpl.nicknames,
+                            avatar: row.avatar ?? tpl.avatar,
+                            max_bet_mph: Number(row.max_bet_mph ?? tpl.max_bet_mph ?? 100),
+                            hash_harvest_difficulty: row.hash_harvest_difficulty ?? tpl.hash_harvest_difficulty ?? 'hard'
+                        };
+                    })
+                }));
+            } catch {}
+        };
+        refresh();
+        const iv = setInterval(refresh, 30000);
+        return () => { alive = false; clearInterval(iv); };
+    }, [tab, pvpState]);
+
+    useEffect(() => {
+        if (tab !== 'pvp') return;
+        if (pvpState !== 'lobby') return;
 
         const buildBotGames = () => {
             const availableBots = (state.bots || []).filter(b => b.active);
@@ -1182,7 +1214,7 @@ export const ArcadeView = () => {
 
             if (!data?.ok) throw new Error(data?.error || 'Falha ao processar resultado.');
             if (usedFallback) {
-                addNotification('Servidor ainda não foi atualizado com a nova função de bots. Aplique as migrations do Supabase para evitar esse aviso.', 'warning');
+                console.warn('Supabase RPC pvp_bot_match_settle está desatualizada (schema cache). Aplicar migrations para habilitar p_bot_id/p_bot_nickname.');
             }
 
             const outcome = data.outcome || 'loss';
