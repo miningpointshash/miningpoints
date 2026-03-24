@@ -24,6 +24,7 @@ export const ForumView = ({ navigate }) => {
     const [topics, setTopics] = useState([]);
     const [selectedTopic, setSelectedTopic] = useState(null);
     const [comments, setComments] = useState([]);
+    const [likedTopicMap, setLikedTopicMap] = useState({});
     
     // Forms
     const [newTitle, setNewTitle] = useState('');
@@ -75,6 +76,10 @@ export const ForumView = ({ navigate }) => {
         }
     }, [viewMode, selectedTopic, selectedContact]);
 
+    const ADMIN_ROLES = ['admin_master', 'admin_finance'];
+    const isAuditor = ADMIN_ROLES.includes(state?.user?.role);
+    const HIDE_ADMIN = !isAuditor;
+
     const fetchTopics = async () => {
         setLoading(true);
         try {
@@ -82,12 +87,15 @@ export const ForumView = ({ navigate }) => {
                 .from('forum_topics')
                 .select(`
                     *,
-                    profiles:user_id (username, avatar_url),
+                    profiles:user_id (username, avatar_url, role),
                     forum_comments(count)
                 `)
                 .order('created_at', { ascending: false });
             if (error) throw error;
-            setTopics(data || []);
+            const rows = data || [];
+            // Exibir conteúdos de admin para todos; esconder somente contatos
+            setTopics(rows);
+            await fetchMyTopicLikes(rows.map(r => r.id).filter(Boolean));
         } catch (err) {
             console.error(err);
             addNotification('Erro ao carregar tópicos', 'danger');
@@ -96,15 +104,61 @@ export const ForumView = ({ navigate }) => {
         }
     };
 
+    const fetchMyTopicLikes = async (topicIds) => {
+        const uid = state?.user?.id;
+        if (!uid || !Array.isArray(topicIds) || topicIds.length === 0) {
+            setLikedTopicMap({});
+            return;
+        }
+        try {
+            const { data, error } = await supabase
+                .from('forum_topic_likes')
+                .select('topic_id')
+                .eq('user_id', uid)
+                .in('topic_id', topicIds);
+            if (error) throw error;
+            const next = (data || []).reduce((acc, r) => {
+                if (r?.topic_id) acc[r.topic_id] = true;
+                return acc;
+            }, {});
+            setLikedTopicMap(next);
+        } catch (err) {
+            console.error(err);
+            setLikedTopicMap({});
+        }
+    };
+
+    const toggleTopicLike = async (topicId) => {
+        const uid = state?.user?.id;
+        if (!uid || !topicId) return;
+        try {
+            const { data, error } = await supabase.rpc('toggle_forum_topic_like', { p_topic_id: topicId });
+            if (error) throw error;
+            if (!data?.ok) throw new Error('Falha ao registrar like');
+
+            const likes = Number(data.likes || 0);
+            const liked = Boolean(data.liked);
+
+            setLikedTopicMap(prev => ({ ...prev, [topicId]: liked }));
+            setTopics(prev => (prev || []).map(t => t.id === topicId ? { ...t, likes } : t));
+            setSelectedTopic(prev => (prev?.id === topicId ? { ...prev, likes } : prev));
+        } catch (err) {
+            console.error(err);
+            addNotification('Erro ao registrar like', 'danger');
+        }
+    };
+
     const fetchComments = async (topicId) => {
         try {
             const { data, error } = await supabase
                 .from('forum_comments')
-                .select(`*, profiles:user_id (username, avatar_url)`)
+                .select(`*, profiles:user_id (username, avatar_url, role)`)
                 .eq('topic_id', topicId)
                 .order('created_at', { ascending: true });
             if (error) throw error;
-            setComments(data || []);
+            const rows = data || [];
+            // Exibir conteúdos de admin para todos; esconder somente contatos
+            setComments(rows);
         } catch (err) {
             console.error(err);
         }
@@ -149,13 +203,18 @@ export const ForumView = ({ navigate }) => {
         try {
             // Get all profiles for now as MVP to find users to chat with, or just recent chats.
             // Let's get all profiles to allow discovering users, but limit to 50
-            const { data, error } = await supabase
+            let query = supabase
                 .from('profiles')
-                .select('id, username, avatar_url')
+                .select('id, username, avatar_url, role')
                 .neq('id', state.user.id)
                 .limit(50);
+            if (HIDE_ADMIN) {
+                query = query.neq('role', 'admin_master').neq('role', 'admin_finance');
+            }
+            const { data, error } = await query;
             if (error) throw error;
-            setContacts(data || []);
+            const rows = data || [];
+            setContacts(HIDE_ADMIN ? rows.filter(p => !ADMIN_ROLES.includes(p.role)) : rows);
         } catch (err) {
             console.error(err);
         } finally {
@@ -354,8 +413,11 @@ export const ForumView = ({ navigate }) => {
                                                 <img src={getAvatarSrc(topic.profiles?.avatar_url)} alt="avatar" className="w-full h-full object-cover" />
                                             </div>
                                             <div>
-                                                <div className="text-sm font-bold flex items-center gap-1">
+                                                <div className="text-sm font-bold flex items-center gap-2">
                                                     {topic.profiles?.username}
+                                                    {['admin_master','admin_finance'].includes(topic?.profiles?.role) && (
+                                                        <span className="text-[9px] px-1.5 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-900/20 uppercase tracking-wide">ADMIN</span>
+                                                    )}
                                                 </div>
                                                 <div className="text-[10px] text-gray-500">{formatTimeAgo(topic.created_at)}</div>
                                             </div>
@@ -376,7 +438,13 @@ export const ForumView = ({ navigate }) => {
                                     <h3 className="font-bold text-white mb-1">{topic.title}</h3>
                                     <p className="text-sm text-gray-400 line-clamp-2 mb-3">{topic.content}</p>
                                     <div className="flex items-center gap-4 text-gray-500 text-xs">
-                                        <span className="flex items-center gap-1"><ThumbsUp size={14} /> {topic.likes}</span>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); toggleTopicLike(topic.id); }}
+                                            className={`flex items-center gap-1 transition-colors ${likedTopicMap?.[topic.id] ? 'text-green-400' : 'text-gray-500 hover:text-green-400'}`}
+                                            title="Curtir"
+                                        >
+                                            <ThumbsUp size={14} /> {topic.likes}
+                                        </button>
                                         <span className="flex items-center gap-1"><MessageCircle size={14} /> {topic.forum_comments?.[0]?.count || 0}</span>
                                         <button 
                                             onClick={(e) => {
@@ -460,15 +528,27 @@ export const ForumView = ({ navigate }) => {
                                     <img src={getAvatarSrc(selectedTopic.profiles?.avatar_url)} alt="avatar" className="w-full h-full object-cover" />
                                 </div>
                                 <div>
-                                    <h2 className="font-bold text-lg leading-tight">{selectedTopic.title}</h2>
-                                    <div className="text-xs text-gray-400 flex items-center gap-1">
-                                        <User size={10} /> {selectedTopic.profiles?.username} • {formatTimeAgo(selectedTopic.created_at)}
+                                    <h2 className="font-bold text-lg leading-tight flex items-center gap-2">
+                                        {selectedTopic.title}
+                                    </h2>
+                                    <div className="text-xs text-gray-400 flex items-center gap-2">
+                                        <User size={10} /> {selectedTopic.profiles?.username}
+                                        {['admin_master','admin_finance'].includes(selectedTopic?.profiles?.role) && (
+                                            <span className="text-[9px] px-1.5 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-900/20 uppercase tracking-wide">ADMIN</span>
+                                        )}
+                                        <span>• {formatTimeAgo(selectedTopic.created_at)}</span>
                                     </div>
                                 </div>
                             </div>
                             <p className="text-gray-300 whitespace-pre-wrap text-sm">{selectedTopic.content}</p>
                             <div className="flex items-center gap-4 text-gray-500 text-xs mt-4 pt-4 border-t border-gray-800">
-                                <span className="flex items-center gap-1"><ThumbsUp size={14} /> {selectedTopic.likes} Likes</span>
+                                <button
+                                    onClick={() => toggleTopicLike(selectedTopic.id)}
+                                    className={`flex items-center gap-1 transition-colors ${likedTopicMap?.[selectedTopic.id] ? 'text-green-400' : 'text-gray-500 hover:text-green-400'}`}
+                                    title="Curtir"
+                                >
+                                    <ThumbsUp size={14} /> {selectedTopic.likes} Likes
+                                </button>
                                 <span className="flex items-center gap-1"><MessageCircle size={14} /> {comments.length} {t('forum.comments', 'Comentários')}</span>
                             </div>
                         </div>
@@ -484,7 +564,12 @@ export const ForumView = ({ navigate }) => {
                                                 <div className="w-6 h-6 rounded-full bg-gray-800 overflow-hidden">
                                                     <img src={getAvatarSrc(c.profiles?.avatar_url)} alt="avatar" className="w-full h-full object-cover" />
                                                 </div>
-                                                <span className="text-sm font-bold">{c.profiles?.username}</span>
+                                                <span className="text-sm font-bold flex items-center gap-2">
+                                                    {c.profiles?.username}
+                                                    {['admin_master','admin_finance'].includes(c?.profiles?.role) && (
+                                                        <span className="text-[9px] px-1.5 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-900/20 uppercase tracking-wide">ADMIN</span>
+                                                    )}
+                                                </span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[10px] text-gray-500">{formatTimeAgo(c.created_at)}</span>
