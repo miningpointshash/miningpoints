@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { 
     Users, Shield, DollarSign, Activity, Edit2, Search, Filter, 
     Check, X, AlertTriangle, Zap, Lock, Unlock, RefreshCw, User,
-    Settings, CreditCard, Bitcoin, Save, Eye, EyeOff, Network, ChevronDown, ChevronUp, Trophy, TrendingUp, MessageSquare, Mail, Copy, Share2
+    Settings, CreditCard, Bitcoin, Save, Eye, EyeOff, Network, ChevronDown, ChevronUp, Trophy, TrendingUp, MessageSquare, Mail, Copy, Share2, ExternalLink
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -109,14 +109,24 @@ const NetworkViewer = ({ userId, username, onClose }) => {
         <div className="space-y-6 pb-20">
             <div className="flex items-center justify-between mb-4">
                 <h3 className="font-bold text-white text-lg">Links de Material (Marketing)</h3>
-                <Button 
-                    onClick={saveMarketingLinks} 
-                    disabled={isSavingMaterials}
-                    size="sm"
-                    className="bg-green-600 hover:bg-green-500"
-                >
-                    {isSavingMaterials ? 'Salvando...' : 'Salvar Links'}
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button
+                        onClick={() => setShowMaterialsTestModal(true)}
+                        size="sm"
+                        variant="outline"
+                        className="border-indigo-500 text-indigo-400 hover:bg-indigo-500 hover:text-black"
+                    >
+                        <ExternalLink size={16} className="mr-1" /> Testar (idioma atual)
+                    </Button>
+                    <Button 
+                        onClick={saveMarketingLinks} 
+                        disabled={isSavingMaterials}
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-500"
+                    >
+                        {isSavingMaterials ? 'Salvando...' : 'Salvar Links'}
+                    </Button>
+                </div>
             </div>
             
             <div className="bg-[#111111] p-4 rounded-xl border border-gray-800 space-y-4">
@@ -198,6 +208,58 @@ const NetworkViewer = ({ userId, username, onClose }) => {
                     </div>
                 ))}
             </div>
+
+            {showMaterialsTestModal && (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+                    <Card className="w-full max-w-lg bg-gray-900 border-gray-700 p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="min-w-0">
+                                <h3 className="font-bold text-white flex items-center gap-2">
+                                    <ExternalLink size={18} className="text-indigo-400" />
+                                    Testar Links ({state.user.language})
+                                </h3>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Abre os links cadastrados para o idioma atual do seu usuário Admin.
+                                </p>
+                            </div>
+                            <Button size="icon" variant="ghost" onClick={() => setShowMaterialsTestModal(false)}>
+                                <X size={18} />
+                            </Button>
+                        </div>
+
+                        <div className="space-y-3">
+                            {[
+                                { k: 'pdf', label: 'Apresentação (PDF)' },
+                                { k: 'banners', label: 'Banners' },
+                                { k: 'video1', label: 'Vídeo Formato 1' },
+                                { k: 'video2', label: 'Vídeo Formato 2' },
+                                { k: 'video3', label: 'Vídeo Formato 3' }
+                            ].map(item => {
+                                const url = String(marketingLinks?.[state.user.language]?.[item.k] || '').trim();
+                                if (!url) return null;
+                                return (
+                                    <a
+                                        key={item.k}
+                                        href={url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="w-full bg-black/40 border border-gray-800 hover:border-indigo-500/60 hover:bg-black/60 text-gray-200 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
+                                    >
+                                        <span className="truncate pr-3">{item.label}</span>
+                                        <ExternalLink size={16} className="text-indigo-400 shrink-0" />
+                                    </a>
+                                );
+                            })}
+
+                            {(!marketingLinks?.[state.user.language] || Object.values(marketingLinks[state.user.language]).every(v => !String(v || '').trim())) && (
+                                <div className="text-center py-6 text-gray-500 text-sm bg-black/40 rounded-lg border border-gray-800">
+                                    Nenhum link cadastrado para este idioma ainda.
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 
@@ -601,6 +663,7 @@ export const AdminView = ({ navigate }) => {
         'zh': { pdf: '', banners: '', video1: '', video2: '', video3: '' }
     });
     const [isSavingMaterials, setIsSavingMaterials] = useState(false);
+    const [showMaterialsTestModal, setShowMaterialsTestModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [editUser, setEditUser] = useState(null); // Usuário sendo editado
     const [botRecharge, setBotRecharge] = useState(null); // Bot sendo recarregado
@@ -2434,19 +2497,65 @@ export const AdminView = ({ navigate }) => {
             
             <div className="bg-[#111111] p-4 rounded-xl border border-gray-800 space-y-4">
                 <p className="text-sm text-gray-400 mb-4">
-                    Insira os links do Google Drive para cada idioma. Os usuários verão o botão de "Material" no menu de acordo com o idioma ativo.
+                    Insira os links do Google Drive para cada formato e idioma. O usuário escolherá o que baixar na Central de Materiais.
                 </p>
 
                 {['pt-BR', 'en', 'es', 'fr', 'ru', 'zh'].map(lang => (
-                    <div key={lang} className="flex flex-col gap-1">
-                        <label className="text-xs font-bold text-gray-300 uppercase">{lang}</label>
-                        <input
-                            type="url"
-                            placeholder={`https://drive.google.com/...`}
-                            value={marketingLinks[lang] || ''}
-                            onChange={(e) => setMarketingLinks(prev => ({ ...prev, [lang]: e.target.value }))}
-                            className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500 transition-colors"
-                        />
+                    <div key={lang} className="flex flex-col gap-2 p-3 bg-black/40 border border-gray-800 rounded-lg">
+                        <label className="text-sm font-bold text-gray-300 uppercase border-b border-gray-700 pb-1">{lang}</label>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Apresentação (PDF)</label>
+                                <input
+                                    type="url"
+                                    placeholder="https://drive.google.com/..."
+                                    value={marketingLinks[lang]?.pdf || ''}
+                                    onChange={(e) => setMarketingLinks(prev => ({ ...prev, [lang]: { ...prev[lang], pdf: e.target.value } }))}
+                                    className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Banners</label>
+                                <input
+                                    type="url"
+                                    placeholder="https://drive.google.com/..."
+                                    value={marketingLinks[lang]?.banners || ''}
+                                    onChange={(e) => setMarketingLinks(prev => ({ ...prev, [lang]: { ...prev[lang], banners: e.target.value } }))}
+                                    className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Vídeo Formato 1</label>
+                                <input
+                                    type="url"
+                                    placeholder="https://drive.google.com/..."
+                                    value={marketingLinks[lang]?.video1 || ''}
+                                    onChange={(e) => setMarketingLinks(prev => ({ ...prev, [lang]: { ...prev[lang], video1: e.target.value } }))}
+                                    className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Vídeo Formato 2</label>
+                                <input
+                                    type="url"
+                                    placeholder="https://drive.google.com/..."
+                                    value={marketingLinks[lang]?.video2 || ''}
+                                    onChange={(e) => setMarketingLinks(prev => ({ ...prev, [lang]: { ...prev[lang], video2: e.target.value } }))}
+                                    className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Vídeo Formato 3</label>
+                                <input
+                                    type="url"
+                                    placeholder="https://drive.google.com/..."
+                                    value={marketingLinks[lang]?.video3 || ''}
+                                    onChange={(e) => setMarketingLinks(prev => ({ ...prev, [lang]: { ...prev[lang], video3: e.target.value } }))}
+                                    className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                />
+                            </div>
+                        </div>
                     </div>
                 ))}
             </div>

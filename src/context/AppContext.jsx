@@ -978,9 +978,29 @@ export const AppProvider = ({ children }) => {
               return;
           }
           if (data?.ok) {
+                const defaultLinks = {
+                    'pt-BR': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+                    'en': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+                    'es': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+                    'fr': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+                    'ru': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+                    'zh': { pdf: '', banners: '', video1: '', video2: '', video3: '' }
+                };
+
+                const raw = data.materials || {};
+                const normalized = { ...defaultLinks };
+                for (const lang of Object.keys(defaultLinks)) {
+                    const value = raw?.[lang];
+                    if (typeof value === 'string') {
+                        normalized[lang] = { ...defaultLinks[lang], pdf: value };
+                    } else if (value && typeof value === 'object') {
+                        normalized[lang] = { ...defaultLinks[lang], ...value };
+                    }
+                }
+
               setState(prev => ({
                   ...prev,
-                  marketingMaterials: data.materials || {}
+                    marketingMaterials: normalized
               }));
           }
       } catch (err) {
