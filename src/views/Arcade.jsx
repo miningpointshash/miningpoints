@@ -6,6 +6,7 @@ import { Card } from '../components/ui/Card';
 import { supabase } from '../lib/supabase';
 import { CyberRunnerGame } from '../components/games/CyberRunner';
 import { CryptoCatcherGame } from '../components/games/CryptoCatcher';
+import { PacCryptoGame } from '../components/games/PacCryptoGame';
 import { HashHarvestGame } from '../components/games/HashHarvest';
 import { TwelveDoorsGame } from '../components/games/TwelveDoorsGame';
 import { SoundManager } from '../utils/soundManager';
@@ -225,6 +226,16 @@ export const ArcadeView = () => {
         if (earnedMPH > 0) {
             addGameResult('Crypto Catcher', earnedMPH);
             addNotification(`Catcher finalizado: +${earnedMPH.toFixed(2)} MPH`, 'success');
+        }
+        setGame(null);
+    };
+
+    const closePacCrypto = (finalScore) => {
+        const cappedScore = Math.min(500, Number(finalScore || 0));
+        const earnedMPH = cappedScore / 100;
+        if (earnedMPH > 0) {
+            addGameResult('PacCrypto', earnedMPH);
+            addNotification(`PacCrypto finalizado: +${earnedMPH.toFixed(2)} MPH`, 'success');
         }
         setGame(null);
     };
@@ -1335,6 +1346,16 @@ export const ArcadeView = () => {
                         </div>
                     )}
 
+                    {game === 'pac_crypto' && (
+                        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+                            <Button onClick={() => setGame(null)} className="absolute top-4 right-4 z-50 bg-red-600/80 p-2 rounded-full w-auto h-auto"><X size={20}/></Button>
+                            <PacCryptoGame 
+                                onGameOver={(score) => {}} 
+                                onExit={(finalScore) => closePacCrypto(finalScore || 0)}
+                            />
+                        </div>
+                    )}
+
                     <div className="text-center mb-6 flex justify-center gap-3">
                         <div className="inline-block bg-gray-800 px-3 py-1 rounded-full text-xs border border-green-500 text-green-400">
                             {t('arcade.dailyCreditsLabel')} {Number(state.user.dailyCreditsFreeRemaining ?? state.user.dailyCredits ?? 0)}/3{Number(state.user.dailyCreditsBonusRemaining || 0) > 0 ? ` (+${Number(state.user.dailyCreditsBonusRemaining || 0)})` : ''}
@@ -1368,8 +1389,8 @@ export const ArcadeView = () => {
                         {/* JOGO 2: CRYPTO CATCHER */}
                         <Card className="relative overflow-hidden group p-0 border-purple-900">
                             <div className="h-32 bg-black relative">
-                                <div className="absolute inset-0 bg-[url('https://img.freepik.com/free-vector/pixel-rain-abstract-background_23-2148364537.jpg')] bg-cover bg-center opacity-40"></div>
-                                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
+                                <div className="absolute inset-0 bg-[url('/assets/static/cryptocatcher_banner.svg')] bg-cover bg-center opacity-80"></div>
+                                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent"></div>
                                 <div className="absolute bottom-2 left-4">
                                     <h3 className="text-xl font-bold text-white font-mono">{t('arcade.catcherTitle')}</h3>
                                     <p className="text-[10px] text-gray-300">{t('arcade.catcherDesc')}</p>
@@ -1377,6 +1398,23 @@ export const ArcadeView = () => {
                             </div>
                             <div className="p-3 bg-[#111111]">
                                 <Button onClick={() => handlePlayRequest('catcher')} variant="outline" className="w-full text-xs py-3 font-mono">
+                                    {t('arcade.playNow')}
+                                </Button>
+                            </div>
+                        </Card>
+
+                        {/* JOGO 3: PAC CRYPTO */}
+                        <Card className="relative overflow-hidden group p-0 border-yellow-500">
+                            <div className="h-32 bg-black relative">
+                                <div className="absolute inset-0 bg-[url('/assets/static/paccrypto_banner.svg')] bg-cover bg-center opacity-80"></div>
+                                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent"></div>
+                                <div className="absolute bottom-2 left-4">
+                                    <h3 className="text-xl font-bold text-white font-mono drop-shadow-md">{t('arcade.pacTitle')}</h3>
+                                    <p className="text-[10px] text-gray-300">{t('arcade.pacDesc')}</p>
+                                </div>
+                            </div>
+                            <div className="p-3 bg-[#111111]">
+                                <Button onClick={() => handlePlayRequest('pac_crypto')} variant="outline" className="w-full text-xs py-3 font-mono border-yellow-600 text-yellow-500 hover:bg-yellow-900/30">
                                     {t('arcade.playNow')}
                                 </Button>
                             </div>
