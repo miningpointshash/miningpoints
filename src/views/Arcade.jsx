@@ -1389,7 +1389,7 @@ export const ArcadeView = () => {
                         {/* JOGO 2: CRYPTO CATCHER */}
                         <Card className="relative overflow-hidden group p-0 border-purple-900">
                             <div className="h-32 bg-black relative">
-                                <div className="absolute inset-0 bg-cover bg-center opacity-80" style={{ backgroundImage: "url(/assets/static/cryptocatcher_banner.svg)" }}></div>
+                                <img src="/assets/static/cryptocatcher_banner.svg" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover opacity-80" />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent"></div>
                                 <div className="absolute bottom-2 left-4">
                                     <h3 className="text-xl font-bold text-white font-mono">{t('arcade.catcherTitle')}</h3>
@@ -1406,7 +1406,7 @@ export const ArcadeView = () => {
                         {/* JOGO 3: PAC CRYPTO */}
                         <Card className="relative overflow-hidden group p-0 border-yellow-500">
                             <div className="h-32 bg-black relative">
-                                <div className="absolute inset-0 bg-cover bg-center opacity-80" style={{ backgroundImage: "url(/assets/static/paccrypto_banner.svg)" }}></div>
+                                <img src="/assets/static/paccrypto_banner.svg" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover opacity-80" />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent"></div>
                                 <div className="absolute bottom-2 left-4">
                                     <h3 className="text-xl font-bold text-white font-mono drop-shadow-md">{t('arcade.pacTitle')}</h3>

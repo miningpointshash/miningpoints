@@ -29,6 +29,7 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
     const [isAvatarSaving, setIsAvatarSaving] = useState(false);
     const [isAvatarUploading, setIsAvatarUploading] = useState(false);
     const [showMaterialsModal, setShowMaterialsModal] = useState(false);
+    const [materialsLangOverride, setMaterialsLangOverride] = useState(state.user.language);
 
     const getAvatarSrc = (value) => {
         const raw = String(value || '').trim();
@@ -38,6 +39,7 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
     };
 
     const availablePersonas = ['mp_p1', 'mp_p2', 'mp_p3', 'mp_p4', 'mp_p5', 'mp_p6', 'mp_p7', 'mp_p8'];
+    const isAdmin = ['admin_master', 'admin_finance', 'admin_partner'].includes(state.user.role);
 
     useEffect(() => {
         setSubTab(initialTab);
@@ -391,7 +393,10 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                     {t('menu.marketingMaterialsDesc')}
                 </p>
                 <button 
-                    onClick={() => setShowMaterialsModal(true)}
+                    onClick={() => {
+                        setMaterialsLangOverride(state.user.language);
+                        setShowMaterialsModal(true);
+                    }}
                     className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-center py-3 rounded-lg font-bold text-sm transition-colors"
                 >
                     {t('menu.openMaterialsHub')}
@@ -402,6 +407,28 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
             {showMaterialsModal && (
                 <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
                     <Card className="w-full max-w-md bg-gray-900 border-gray-700 p-5">
+                        {isAdmin && (
+                            <div className="mb-4">
+                                <label className="text-[10px] text-gray-500 uppercase block mb-1">{t('menu.language')}</label>
+                                <select
+                                    value={materialsLangOverride}
+                                    onChange={(e) => setMaterialsLangOverride(e.target.value)}
+                                    className="w-full bg-black border border-gray-700 rounded px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                                >
+                                    {AVAILABLE_LANGUAGES.map(lang => (
+                                        <option key={lang.code} value={lang.code}>
+                                            {lang.name} ({lang.code})
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="mt-2">
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-indigo-900/30 text-indigo-300 border border-indigo-700/50">
+                                        Testando: {materialsLangOverride}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="font-bold text-white flex items-center gap-2">
                                 <Download size={18} className="text-indigo-400" />
@@ -412,10 +439,16 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                             </Button>
                         </div>
                         
+                        {(() => {
+                            const activeLang = isAdmin ? materialsLangOverride : state.user.language;
+                            const materials = state.marketingMaterials?.[activeLang];
+                            const isEmpty = !materials || Object.values(materials).every(val => !val);
+
+                            return (
                         <div className="space-y-3">
-                            {state.marketingMaterials?.[state.user.language]?.pdf && (
+                            {materials?.pdf && (
                                 <a 
-                                    href={state.marketingMaterials[state.user.language].pdf}
+                                    href={materials.pdf}
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     className="w-full bg-red-900/20 border border-red-900/50 hover:bg-red-900/40 text-red-400 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
@@ -425,9 +458,9 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                                 </a>
                             )}
                             
-                            {state.marketingMaterials?.[state.user.language]?.banners && (
+                            {materials?.banners && (
                                 <a 
-                                    href={state.marketingMaterials[state.user.language].banners}
+                                    href={materials.banners}
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     className="w-full bg-blue-900/20 border border-blue-900/50 hover:bg-blue-900/40 text-blue-400 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
@@ -437,9 +470,9 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                                 </a>
                             )}
                             
-                            {state.marketingMaterials?.[state.user.language]?.video1 && (
+                            {materials?.video1 && (
                                 <a 
-                                    href={state.marketingMaterials[state.user.language].video1}
+                                    href={materials.video1}
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     className="w-full bg-purple-900/20 border border-purple-900/50 hover:bg-purple-900/40 text-purple-400 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
@@ -449,9 +482,9 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                                 </a>
                             )}
                             
-                            {state.marketingMaterials?.[state.user.language]?.video2 && (
+                            {materials?.video2 && (
                                 <a 
-                                    href={state.marketingMaterials[state.user.language].video2}
+                                    href={materials.video2}
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     className="w-full bg-purple-900/20 border border-purple-900/50 hover:bg-purple-900/40 text-purple-400 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
@@ -461,9 +494,9 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                                 </a>
                             )}
                             
-                            {state.marketingMaterials?.[state.user.language]?.video3 && (
+                            {materials?.video3 && (
                                 <a 
-                                    href={state.marketingMaterials[state.user.language].video3}
+                                    href={materials.video3}
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     className="w-full bg-purple-900/20 border border-purple-900/50 hover:bg-purple-900/40 text-purple-400 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
@@ -473,13 +506,14 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                                 </a>
                             )}
                             
-                            {(!state.marketingMaterials?.[state.user.language] || 
-                             Object.values(state.marketingMaterials[state.user.language]).every(val => !val)) && (
+                            {isEmpty && (
                                 <div className="text-center py-6 text-gray-500 text-sm bg-black/40 rounded-lg border border-gray-800">
                                     {t('menu.noMaterialsAvailable')}
                                 </div>
                             )}
                         </div>
+                            );
+                        })()}
                     </Card>
                 </div>
             )}

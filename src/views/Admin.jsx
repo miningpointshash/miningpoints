@@ -829,6 +829,11 @@ export const AdminView = ({ navigate }) => {
             if (error) throw error;
             if (data?.ok) {
                 addNotification('Links de marketing salvos com sucesso', 'success');
+                setState(prev => ({
+                    ...prev,
+                    marketingMaterials: marketingLinks
+                }));
+                fetchMarketingLinks();
             }
         } catch (e) {
             console.error("Erro ao salvar links de marketing", e);
