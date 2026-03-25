@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#07040f"/>
+      <stop offset="1" stop-color="#020204"/>
+    </linearGradient>
+    <linearGradient id="neon" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#ffd54a" stop-opacity="0.85"/>
+      <stop offset="0.55" stop-color="#a855f7" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#ff00ff" stop-opacity="0.65"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="400" fill="url(#bg)"/>
+
+  <g opacity="0.7" filter="url(#glow)" stroke="url(#neon)" stroke-width="6" fill="none">
+    <rect x="60" y="40" width="1080" height="320" rx="18"/>
+    <path d="M140 120h200v60H240v80h120" />
+    <path d="M380 120h140v80H440v80h160" />
+    <path d="M640 120h220v60H740v80h120v60H640" />
+    <path d="M920 120h140v80h-80v80h120" />
+    <path d="M240 280h120v-60h60v120h-60" />
+    <path d="M520 280h120v-120h80v60H620v60h160" />
+    <path d="M880 280h120v-60h-60v-60h120" />
+  </g>
+
+  <g opacity="0.85">
+    <circle cx="230" cy="200" r="48" fill="#ffd54a"/>
+    <path d="M230 200 L280 168 A58 58 0 0 1 280 232 Z" fill="#07040f"/>
+  </g>
+
+  <g transform="translate(820 176)" opacity="0.9">
+    <path d="M0 40a40 40 0 0 1 80 0v44H0z" fill="#ef4444"/>
+    <circle cx="28" cy="24" r="10" fill="#fff"/>
+    <circle cx="52" cy="24" r="10" fill="#fff"/>
+  </g>
+  <g transform="translate(920 176)" opacity="0.9">
+    <path d="M0 40a40 40 0 0 1 80 0v44H0z" fill="#3b82f6"/>
+    <circle cx="28" cy="24" r="10" fill="#fff"/>
+    <circle cx="52" cy="24" r="10" fill="#fff"/>
+  </g>
+
+  <g opacity="0.65" fill="#39ff14">
+    <circle cx="160" cy="90" r="3"/>
+    <circle cx="200" cy="90" r="3"/>
+    <circle cx="240" cy="90" r="3"/>
+    <circle cx="280" cy="90" r="3"/>
+    <circle cx="320" cy="90" r="3"/>
+    <circle cx="360" cy="90" r="3"/>
+    <circle cx="400" cy="90" r="3"/>
+    <circle cx="440" cy="90" r="3"/>
+    <circle cx="480" cy="90" r="3"/>
+    <circle cx="520" cy="90" r="3"/>
+    <circle cx="560" cy="90" r="3"/>
+  </g>
+</svg>
+
