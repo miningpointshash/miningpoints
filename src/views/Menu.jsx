@@ -2,7 +2,7 @@ import React, { useContext, useState, useEffect } from 'react';
 import { 
     Users, MessageSquare, Settings, Globe, LogOut, ChevronRight, Copy, Check, 
     Bot, Headphones, User, Clock, ExternalLink, Mail, Camera, Edit3, Key, 
-    Wallet, AlertTriangle, Save, Shield, X
+    Wallet, AlertTriangle, Save, Shield, X, Download, Share2
 } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
 import { AVAILABLE_LANGUAGES } from '../locales';
@@ -28,6 +28,7 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
     const [showAvatarModal, setShowAvatarModal] = useState(false);
     const [isAvatarSaving, setIsAvatarSaving] = useState(false);
     const [isAvatarUploading, setIsAvatarUploading] = useState(false);
+    const [showMaterialsModal, setShowMaterialsModal] = useState(false);
 
     const getAvatarSrc = (value) => {
         const raw = String(value || '').trim();
@@ -325,7 +326,7 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                             </Card>
                         </div>
                     )}
-                    <Card><h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><Edit3 size={16} className="text-purple-400"/> {t('menu.changeUsername')}</h4><div className="space-y-2"><input type="text" placeholder={t('menu.newUsername')} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white" value={newUsername} onChange={(e) => setNewUsername(e.target.value)}/><div className="flex gap-2"><input type="text" placeholder={t('menu.tokenPlaceholder')} className="flex-1 bg-black border border-gray-700 rounded p-2 text-xs text-white" value={usernameToken} onChange={(e) => setUsernameToken(e.target.value)}/><button onClick={() => addNotification('Token enviado para ' + state.user.email, 'success')} className="bg-gray-800 text-xs px-3 rounded text-gray-300 whitespace-nowrap">{t('menu.requestToken')}</button></div><Button onClick={handleSaveUsername} className="w-full text-xs py-2 mt-2">{t('menu.updateUsername')}</Button></div></Card>
+                    <Card><h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><Edit3 size={16} className="text-purple-400"/> {t('menu.changeUsername')}</h4><div className="space-y-2"><input type="text" placeholder={t('menu.newUsername')} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white" value={newUsername} onChange={(e) => setNewUsername(e.target.value)}/><div className="flex gap-2"><input type="text" placeholder={t('menu.tokenPlaceholder')} className="flex-1 bg-black border border-gray-700 rounded p-2 text-xs text-white" value={usernameToken} onChange={(e) => setUsernameToken(e.target.value)}/><button onClick={() => addNotification(`${t('menu.tokenSent')} ${state.user.email}`, 'success')} className="bg-gray-800 text-xs px-3 rounded text-gray-300 whitespace-nowrap">{t('menu.requestToken')}</button></div><Button onClick={handleSaveUsername} className="w-full text-xs py-2 mt-2">{t('menu.updateUsername')}</Button></div></Card>
                     <Card>
                         <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                             <Key size={16} className="text-blue-400"/> {t('menu.changeLoginPwd')}
@@ -342,7 +343,7 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
                         </Button>
                     </Card>
                     <Card><h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><Key size={16} className="text-yellow-400"/> {t('menu.financialPwd')}</h4><input type="password" placeholder={t('menu.newFinancialPwd')} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white mb-2" value={financialPwd} onChange={(e) => setFinancialPwd(e.target.value)}/><Button onClick={handleSaveFinancialPwd} className="w-full text-xs py-2">{t('menu.setPwd')}</Button></Card>
-                    <Card className="border-green-900"><h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Wallet size={16} className="text-green-400"/> {t('menu.withdrawalWallets')}</h4><div className="space-y-3">{[{ k: 'usdt_bep20', l: 'USDT (BEP-20)' },{ k: 'usdt_polygon', l: 'USDT (Polygon)' },{ k: 'usdt_trc20', l: 'USDT (TRC-20)' },{ k: 'usdt_arbitrum', l: 'USDT (Arbitrum)' },{ k: 'usdc_arbitrum', l: 'USDC (Arbitrum)' },{ k: 'pix', l: 'Chave PIX' }].map((w) => (<div key={w.k}><label className="text-[10px] text-gray-500 uppercase">{w.l}</label><input type="text" placeholder={`Endereço ${w.l}`} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white focus:border-green-500 transition-colors" value={wallets[w.k]} onChange={(e) => setWallets({...wallets, [w.k]: e.target.value})}/></div>))}<div className="bg-yellow-900/20 p-3 rounded border border-yellow-900/50 mt-4"><div className="flex items-start gap-2 mb-2"><AlertTriangle size={16} className="text-yellow-500 shrink-0 mt-0.5"/><p className="text-[10px] text-yellow-200 leading-tight">{t('menu.walletSecurityWarning')}</p></div><div className="flex gap-2"><input type="text" placeholder={t('menu.securityToken')} className="flex-1 bg-black border border-yellow-700 rounded p-2 text-xs text-white" value={walletToken} onChange={(e) => setWalletToken(e.target.value)}/><button onClick={handleRequestWalletToken} disabled={isWalletTokenSending} className="bg-yellow-700 text-black font-bold text-xs px-3 rounded hover:bg-yellow-600 whitespace-nowrap disabled:opacity-60">{isWalletTokenSending ? 'Enviando...' : t('menu.request')}</button></div></div><Button onClick={handleSaveWallets} disabled={isWalletSaving} variant="success" className="w-full text-xs py-3 flex items-center justify-center gap-2"><Save size={16}/> {isWalletSaving ? 'Salvando...' : t('menu.saveWallets')}</Button></div></Card>
+                    <Card className="border-green-900"><h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Wallet size={16} className="text-green-400"/> {t('menu.withdrawalWallets')}</h4><div className="space-y-3">{[{ k: 'usdt_bep20', l: 'USDT (BEP-20)' },{ k: 'usdt_polygon', l: 'USDT (Polygon)' },{ k: 'usdt_trc20', l: 'USDT (TRC-20)' },{ k: 'usdt_arbitrum', l: 'USDT (Arbitrum)' },{ k: 'usdc_arbitrum', l: 'USDC (Arbitrum)' },{ k: 'pix', l: 'Chave PIX' }].map((w) => (<div key={w.k}><label className="text-[10px] text-gray-500 uppercase">{w.l}</label><input type="text" placeholder={`Endereço ${w.l}`} className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white focus:border-green-500 transition-colors" value={wallets[w.k]} onChange={(e) => setWallets({...wallets, [w.k]: e.target.value})}/></div>))}<div className="bg-yellow-900/20 p-3 rounded border border-yellow-900/50 mt-4"><div className="flex items-start gap-2 mb-2"><AlertTriangle size={16} className="text-yellow-500 shrink-0 mt-0.5"/><p className="text-[10px] text-yellow-200 leading-tight">{t('menu.walletSecurityWarning')}</p></div><div className="flex gap-2"><input type="text" placeholder={t('menu.securityToken')} className="flex-1 bg-black border border-yellow-700 rounded p-2 text-xs text-white" value={walletToken} onChange={(e) => setWalletToken(e.target.value)}/><button onClick={handleRequestWalletToken} disabled={isWalletTokenSending} className="bg-yellow-700 text-black font-bold text-xs px-3 rounded hover:bg-yellow-600 whitespace-nowrap disabled:opacity-60">{isWalletTokenSending ? t('menu.sending') : t('menu.request')}</button></div></div><Button onClick={handleSaveWallets} disabled={isWalletSaving} variant="success" className="w-full text-xs py-3 flex items-center justify-center gap-2"><Save size={16}/> {isWalletSaving ? t('menu.saving') : t('menu.saveWallets')}</Button></div></Card>
                  </div>
             </div>
         )
@@ -373,17 +374,121 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-6">
+                <button onClick={() => navigate('forum')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><MessageSquare className="text-yellow-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.forum')}</span></button>
                 <button onClick={() => setSubTab('team')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Users className="text-purple-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.team')}</span></button>
-                <button onClick={() => setSubTab('support')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><MessageSquare className="text-blue-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.supportAI')}</span></button>
+                <button onClick={() => setSubTab('support')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Bot className="text-blue-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.supportAI')}</span></button>
                 <button onClick={() => setSubTab('config')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Settings className="text-gray-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.settings')}</span></button>
                 <button onClick={() => setSubTab('language')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Globe className="text-green-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.language')}</span></button>
             </div>
+
+            {/* Container Material */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6">
+                <div className="flex items-center gap-2 mb-2">
+                    <Download size={18} className="text-indigo-400" />
+                    <h3 className="text-white font-bold text-sm">{t('menu.marketingMaterials')}</h3>
+                </div>
+                <p className="text-gray-400 text-xs mb-4">
+                    {t('menu.marketingMaterialsDesc')}
+                </p>
+                <button 
+                    onClick={() => setShowMaterialsModal(true)}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-center py-3 rounded-lg font-bold text-sm transition-colors"
+                >
+                    {t('menu.openMaterialsHub')}
+                </button>
+            </div>
+
+            {/* Modal de Materiais */}
+            {showMaterialsModal && (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+                    <Card className="w-full max-w-md bg-gray-900 border-gray-700 p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-white flex items-center gap-2">
+                                <Download size={18} className="text-indigo-400" />
+                                {t('menu.marketingMaterials')}
+                            </h3>
+                            <Button size="icon" variant="ghost" onClick={() => setShowMaterialsModal(false)}>
+                                <X size={18} />
+                            </Button>
+                        </div>
+                        
+                        <div className="space-y-3">
+                            {state.marketingMaterials?.[state.user.language]?.pdf && (
+                                <a 
+                                    href={state.marketingMaterials[state.user.language].pdf}
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="w-full bg-red-900/20 border border-red-900/50 hover:bg-red-900/40 text-red-400 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
+                                >
+                                    <span>{t('menu.downloadPdf')}</span>
+                                    <ExternalLink size={16} />
+                                </a>
+                            )}
+                            
+                            {state.marketingMaterials?.[state.user.language]?.banners && (
+                                <a 
+                                    href={state.marketingMaterials[state.user.language].banners}
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="w-full bg-blue-900/20 border border-blue-900/50 hover:bg-blue-900/40 text-blue-400 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
+                                >
+                                    <span>{t('menu.downloadBanners')}</span>
+                                    <ExternalLink size={16} />
+                                </a>
+                            )}
+                            
+                            {state.marketingMaterials?.[state.user.language]?.video1 && (
+                                <a 
+                                    href={state.marketingMaterials[state.user.language].video1}
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="w-full bg-purple-900/20 border border-purple-900/50 hover:bg-purple-900/40 text-purple-400 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
+                                >
+                                    <span>{t('menu.downloadVideo1')}</span>
+                                    <ExternalLink size={16} />
+                                </a>
+                            )}
+                            
+                            {state.marketingMaterials?.[state.user.language]?.video2 && (
+                                <a 
+                                    href={state.marketingMaterials[state.user.language].video2}
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="w-full bg-purple-900/20 border border-purple-900/50 hover:bg-purple-900/40 text-purple-400 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
+                                >
+                                    <span>{t('menu.downloadVideo2')}</span>
+                                    <ExternalLink size={16} />
+                                </a>
+                            )}
+                            
+                            {state.marketingMaterials?.[state.user.language]?.video3 && (
+                                <a 
+                                    href={state.marketingMaterials[state.user.language].video3}
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="w-full bg-purple-900/20 border border-purple-900/50 hover:bg-purple-900/40 text-purple-400 text-sm font-bold py-3 px-4 rounded-lg flex items-center justify-between transition-colors"
+                                >
+                                    <span>{t('menu.downloadVideo3')}</span>
+                                    <ExternalLink size={16} />
+                                </a>
+                            )}
+                            
+                            {(!state.marketingMaterials?.[state.user.language] || 
+                             Object.values(state.marketingMaterials[state.user.language]).every(val => !val)) && (
+                                <div className="text-center py-6 text-gray-500 text-sm bg-black/40 rounded-lg border border-gray-800">
+                                    {t('menu.noMaterialsAvailable')}
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                </div>
+            )}
 
             {/* Acesso Admin (Apenas para Master, Finance e Sócios) */}
             {(state.user.role === 'admin_master' || state.user.role === 'admin_finance' || state.user.role === 'admin_partner') && (
                 <div className="mb-6">
                     <Button onClick={() => navigate('admin')} className="w-full bg-red-900/20 text-red-400 border border-red-900/50 hover:bg-red-900/40">
-                        <Shield size={16} className="mr-2" /> {state.user.role === 'admin_partner' ? 'Painel Sócios' : 'Painel Admin'}
+                        <Shield size={16} className="mr-2" /> {state.user.role === 'admin_partner' ? t('menu.partnerPanel') : t('menu.adminPanel')}
                     </Button>
                 </div>
             )}
@@ -415,7 +520,7 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
             </div>
             <Button 
                 onClick={async () => { 
-                    if(window.confirm(t('menu.logout') + '?')) { 
+                    if(window.confirm(t('menu.logoutConfirm'))) { 
                         await supabase.auth.signOut();
                         localStorage.removeItem('mining_points_mvp_v1'); 
                         window.location.href = '/'; // Redireciona para a raiz limpando estado

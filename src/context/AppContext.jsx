@@ -117,7 +117,8 @@ const INITIAL_STATE = {
     wins: 0,
     losses: 0
   },
-  lastLogin: new Date().toISOString()
+  lastLogin: new Date().toISOString(),
+  marketingMaterials: {}
 };
 
 export const AppProvider = ({ children }) => {
@@ -450,6 +451,8 @@ export const AppProvider = ({ children }) => {
                 } catch (e) {
                     console.error('Erro ao carregar bots do Supabase:', e);
                 }
+
+                fetchMarketingMaterials();
             }
         } catch (error) {
             console.error("Erro na sincronização Supabase:", error);
@@ -967,11 +970,29 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  const fetchMarketingMaterials = async () => {
+      try {
+          const { data, error } = await supabase.rpc('get_marketing_materials');
+          if (error) {
+              console.error("Erro ao carregar links de marketing:", error);
+              return;
+          }
+          if (data?.ok) {
+              setState(prev => ({
+                  ...prev,
+                  marketingMaterials: data.materials || {}
+              }));
+          }
+      } catch (err) {
+          console.error("Erro inesperado em fetchMarketingMaterials:", err);
+      }
+  };
+
   return (
     <AppContext.Provider value={{ 
       state, setState, miningTimer, miningStatus, 
       addNotification, updateWallet, addPlan, changeLanguage, popup,
-      markAllNotificationsRead, clearNotifications, addGameResult, processPvpDistribution, consumeDailyCredit, buyCredits, t, resetAppData, getNextBotDifficulty, updateBot
+      markAllNotificationsRead, clearNotifications, addGameResult, processPvpDistribution, consumeDailyCredit, buyCredits, t, resetAppData, getNextBotDifficulty, updateBot, fetchMarketingMaterials
     }}>
       {children}
     </AppContext.Provider>

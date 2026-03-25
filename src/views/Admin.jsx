@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { 
     Users, Shield, DollarSign, Activity, Edit2, Search, Filter, 
     Check, X, AlertTriangle, Zap, Lock, Unlock, RefreshCw, User,
-    Settings, CreditCard, Bitcoin, Save, Eye, EyeOff, Network, ChevronDown, ChevronUp, Trophy, TrendingUp, MessageSquare, Mail, Copy
+    Settings, CreditCard, Bitcoin, Save, Eye, EyeOff, Network, ChevronDown, ChevronUp, Trophy, TrendingUp, MessageSquare, Mail, Copy, Share2
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -104,6 +104,102 @@ const NetworkViewer = ({ userId, username, onClose }) => {
     }, {});
 
     const levels = [1, 2, 3, 4, 5, 6, 7];
+
+    const renderMaterials = () => (
+        <div className="space-y-6 pb-20">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-white text-lg">Links de Material (Marketing)</h3>
+                <Button 
+                    onClick={saveMarketingLinks} 
+                    disabled={isSavingMaterials}
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-500"
+                >
+                    {isSavingMaterials ? 'Salvando...' : 'Salvar Links'}
+                </Button>
+            </div>
+            
+            <div className="bg-[#111111] p-4 rounded-xl border border-gray-800 space-y-4">
+                <p className="text-sm text-gray-400 mb-4">
+                    Insira os links do Google Drive para cada formato e idioma. Os usuários verão essas opções no menu.
+                </p>
+
+                {['pt-BR', 'en', 'es', 'fr', 'ru', 'zh'].map(lang => (
+                    <div key={lang} className="flex flex-col gap-2 p-3 bg-black/40 border border-gray-800 rounded-lg">
+                        <label className="text-sm font-bold text-gray-300 uppercase border-b border-gray-700 pb-1">{lang}</label>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Apresentação (PDF)</label>
+                                <input
+                                    type="url"
+                                    placeholder="Link PDF..."
+                                    value={marketingLinks[lang]?.pdf || ''}
+                                    onChange={(e) => setMarketingLinks(prev => ({ 
+                                        ...prev, 
+                                        [lang]: { ...prev[lang], pdf: e.target.value } 
+                                    }))}
+                                    className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Banners</label>
+                                <input
+                                    type="url"
+                                    placeholder="Link Banners..."
+                                    value={marketingLinks[lang]?.banners || ''}
+                                    onChange={(e) => setMarketingLinks(prev => ({ 
+                                        ...prev, 
+                                        [lang]: { ...prev[lang], banners: e.target.value } 
+                                    }))}
+                                    className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Vídeo Formato 1</label>
+                                <input
+                                    type="url"
+                                    placeholder="Link Vídeo 1..."
+                                    value={marketingLinks[lang]?.video1 || ''}
+                                    onChange={(e) => setMarketingLinks(prev => ({ 
+                                        ...prev, 
+                                        [lang]: { ...prev[lang], video1: e.target.value } 
+                                    }))}
+                                    className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Vídeo Formato 2</label>
+                                <input
+                                    type="url"
+                                    placeholder="Link Vídeo 2..."
+                                    value={marketingLinks[lang]?.video2 || ''}
+                                    onChange={(e) => setMarketingLinks(prev => ({ 
+                                        ...prev, 
+                                        [lang]: { ...prev[lang], video2: e.target.value } 
+                                    }))}
+                                    className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Vídeo Formato 3</label>
+                                <input
+                                    type="url"
+                                    placeholder="Link Vídeo 3..."
+                                    value={marketingLinks[lang]?.video3 || ''}
+                                    onChange={(e) => setMarketingLinks(prev => ({ 
+                                        ...prev, 
+                                        [lang]: { ...prev[lang], video3: e.target.value } 
+                                    }))}
+                                    className="w-full bg-black border border-gray-700 rounded p-2 text-xs text-white outline-none focus:border-purple-500 transition-colors"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
 
     return (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
@@ -495,6 +591,16 @@ export const AdminView = ({ navigate }) => {
             }
         }
     });
+
+    const [marketingLinks, setMarketingLinks] = useState({
+        'pt-BR': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+        'en': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+        'es': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+        'fr': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+        'ru': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+        'zh': { pdf: '', banners: '', video1: '', video2: '', video3: '' }
+    });
+    const [isSavingMaterials, setIsSavingMaterials] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [editUser, setEditUser] = useState(null); // Usuário sendo editado
     const [botRecharge, setBotRecharge] = useState(null); // Bot sendo recarregado
@@ -618,11 +724,63 @@ export const AdminView = ({ navigate }) => {
         }
     };
 
+    const fetchMarketingLinks = async () => {
+        try {
+            const { data, error } = await supabase.rpc('get_marketing_materials');
+            if (error) throw error;
+            if (data?.ok && data.materials) {
+                // Merge with default structure to avoid undefined errors
+                const defaultLinks = {
+                    'pt-BR': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+                    'en': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+                    'es': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+                    'fr': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+                    'ru': { pdf: '', banners: '', video1: '', video2: '', video3: '' },
+                    'zh': { pdf: '', banners: '', video1: '', video2: '', video3: '' }
+                };
+                
+                // Deep merge
+                const loadedLinks = { ...defaultLinks };
+                for (const lang in data.materials) {
+                    if (typeof data.materials[lang] === 'string') {
+                        // Migration from old string format
+                        loadedLinks[lang] = { ...defaultLinks[lang], pdf: data.materials[lang] };
+                    } else if (typeof data.materials[lang] === 'object') {
+                        loadedLinks[lang] = { ...defaultLinks[lang], ...data.materials[lang] };
+                    }
+                }
+                
+                setMarketingLinks(loadedLinks);
+            }
+        } catch (e) {
+            console.error("Erro ao carregar links de marketing", e);
+        }
+    };
+
+    const saveMarketingLinks = async () => {
+        setIsSavingMaterials(true);
+        try {
+            const { data, error } = await supabase.rpc('admin_set_marketing_materials', {
+                p_materials: marketingLinks
+            });
+            if (error) throw error;
+            if (data?.ok) {
+                addNotification('Links de marketing salvos com sucesso', 'success');
+            }
+        } catch (e) {
+            console.error("Erro ao salvar links de marketing", e);
+            addNotification('Erro ao salvar links de marketing', 'error');
+        } finally {
+            setIsSavingMaterials(false);
+        }
+    };
+
     useEffect(() => {
-        if (!['admin_master', 'admin_finance'].includes(state.user.role)) return;
-        if (activeTab !== 'tournaments') return;
-        fetchTournamentAdmin();
-    }, [activeTab, state.user.role]);
+        fetchStats();
+        fetchMarketingLinks();
+        if (activeTab === 'users') fetchUsers();
+        if (activeTab === 'settings') fetchPaymentSettings();
+    }, [activeTab]);
 
     // Carregar usuários do Supabase
     const fetchUsers = async () => {
@@ -2260,6 +2418,41 @@ export const AdminView = ({ navigate }) => {
         </div>
     );
 
+    const renderMaterials = () => (
+        <div className="space-y-6 pb-20">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-white text-lg">Links de Material (Marketing)</h3>
+                <Button 
+                    onClick={saveMarketingLinks} 
+                    disabled={isSavingMaterials}
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-500"
+                >
+                    {isSavingMaterials ? 'Salvando...' : 'Salvar Links'}
+                </Button>
+            </div>
+            
+            <div className="bg-[#111111] p-4 rounded-xl border border-gray-800 space-y-4">
+                <p className="text-sm text-gray-400 mb-4">
+                    Insira os links do Google Drive para cada idioma. Os usuários verão o botão de "Material" no menu de acordo com o idioma ativo.
+                </p>
+
+                {['pt-BR', 'en', 'es', 'fr', 'ru', 'zh'].map(lang => (
+                    <div key={lang} className="flex flex-col gap-1">
+                        <label className="text-xs font-bold text-gray-300 uppercase">{lang}</label>
+                        <input
+                            type="url"
+                            placeholder={`https://drive.google.com/...`}
+                            value={marketingLinks[lang] || ''}
+                            onChange={(e) => setMarketingLinks(prev => ({ ...prev, [lang]: e.target.value }))}
+                            className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500 transition-colors"
+                        />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+
     return (
         <div className="min-h-screen bg-black text-gray-200 pb-20">
             {/* Header Admin */}
@@ -2321,6 +2514,14 @@ export const AdminView = ({ navigate }) => {
                         >
                              <Settings size={16} className="mr-1" /> Pagamentos
                         </Button>
+                        <Button 
+                            variant={activeTab === 'materials' ? 'default' : 'outline'} 
+                            onClick={() => setActiveTab('materials')}
+                            size="sm"
+                            className={activeTab === 'materials' ? 'bg-indigo-600' : ''}
+                        >
+                             <Share2 size={16} className="mr-1" /> Material
+                        </Button>
                     </>
                 )}
                 {canAccessSupport && (
@@ -2352,6 +2553,7 @@ export const AdminView = ({ navigate }) => {
                 {activeTab === 'bots' && renderBots()}
                 {activeTab === 'tournaments' && renderTournaments()}
                 {activeTab === 'settings' && renderSettings()}
+                {activeTab === 'materials' && renderMaterials()}
                 {activeTab === 'reports' && <ForumReportsAdmin />}
                 {activeTab === 'withdrawals' && <WithdrawalManager currentAdmin={state.user} />}
                 {activeTab === 'support' && canAccessSupport && <SupportAdmin currentAdmin={state.user} />}
