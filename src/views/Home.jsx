@@ -27,7 +27,7 @@ export const HomeView = ({ navigate }) => {
       <Ticker />
       
       {/* 4 Cards Principais */}
-      <div className="grid grid-cols-2 gap-3 px-4">
+      <div className="grid grid-cols-2 gap-3 px-4 lg:grid-cols-4">
         <Card className="flex flex-col items-center justify-center text-center relative overflow-hidden">
           {/* Indicador de Patrocínio */}
           {state.user.account_status === 'sponsored' ? (

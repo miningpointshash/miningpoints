@@ -376,9 +376,9 @@ export const MenuView = ({ navigate, initialTab = 'menu' }) => {
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-6">
-                <button onClick={() => navigate('forum')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><MessageSquare className="text-yellow-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.forum')}</span></button>
-                <button onClick={() => setSubTab('team')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Users className="text-purple-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.team')}</span></button>
-                <button onClick={() => setSubTab('support')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Bot className="text-blue-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.supportAI')}</span></button>
+                <button onClick={() => navigate('forum')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition xl:hidden"><MessageSquare className="text-yellow-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.forum')}</span></button>
+                <button onClick={() => setSubTab('team')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition xl:hidden"><Users className="text-purple-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.team')}</span></button>
+                <button onClick={() => setSubTab('support')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition xl:hidden"><Bot className="text-blue-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.supportAI')}</span></button>
                 <button onClick={() => setSubTab('config')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Settings className="text-gray-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.settings')}</span></button>
                 <button onClick={() => setSubTab('language')} className="bg-gray-800 p-4 rounded-xl flex flex-col items-center gap-2 hover:bg-gray-700 transition"><Globe className="text-green-400" size={32} /><span className="text-white font-bold text-sm">{t('menu.language')}</span></button>
             </div>

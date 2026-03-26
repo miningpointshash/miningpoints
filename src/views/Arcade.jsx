@@ -1289,10 +1289,21 @@ export const ArcadeView = () => {
                 </div>
             )}
             
-            {/* Cabeçalho Arcade */}
-            <div className="text-center py-6">
-                <h2 className="text-3xl font-bold font-mono text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">{t('arcade.title')}</h2>
-                <p className="text-gray-400 text-xs mt-2">{t('arcade.subtitle')}</p>
+            {/* Cabeçalho Arcade + Mute */}
+            <div className="relative">
+                <div className="text-center py-6">
+                    <h2 className="text-3xl font-bold font-mono text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">{t('arcade.title')}</h2>
+                    <p className="text-gray-400 text-xs mt-2">{t('arcade.subtitle')}</p>
+                </div>
+                {tab === 'daily' && (
+                    <Button 
+                        onClick={toggleMute}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-2 rounded-full border border-gray-600"
+                        size="sm"
+                    >
+                        {isMuted ? <VolumeX size={16} className="text-red-400" /> : <Volume2 size={16} className="text-green-400" />}
+                    </Button>
+                )}
             </div>
 
             {/* Abas */}
@@ -1310,16 +1321,7 @@ export const ArcadeView = () => {
                     <Swords size={14} /> {t('arcade.pvpArena')}
                 </button>
             </div>
-            {/* Botão de Mute Flutuante (Apenas para Daily Games) */}
-            {tab === 'daily' && (
-                <Button 
-                    onClick={toggleMute}
-                    className="absolute top-24 right-4 z-50 bg-black/50 hover:bg-black/70 p-2 rounded-full border border-gray-600"
-                    size="sm"
-                >
-                    {isMuted ? <VolumeX size={16} className="text-red-400" /> : <Volume2 size={16} className="text-green-400" />}
-                </Button>
-            )}
+            
 
                 {/* Conteúdo das Abas */}
             {tab === 'daily' && (

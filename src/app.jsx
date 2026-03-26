@@ -1,6 +1,6 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { 
-  Bell, Globe, User, LogOut, Check, Home, Gamepad2, Zap, Wallet, Menu as MenuIcon, X, AlertTriangle, Users
+  Bell, Globe, User, LogOut, Check, Home, Gamepad2, Zap, Wallet, Bot, MessageSquare, Menu as MenuIcon, X, AlertTriangle, Users2
 } from 'lucide-react';
 import { THEME } from './utils/theme';
 import { AVAILABLE_LANGUAGES } from './locales';
@@ -223,24 +223,140 @@ const Layout = () => {
 
   return (
     <div className={`min-h-screen bg-black font-sans text-gray-200 overflow-x-hidden selection:bg-purple-500 selection:text-white pb-safe`}>
-      <div className={`max-w-lg mx-auto min-h-screen ${THEME.bg} shadow-2xl relative border-x border-gray-900`}>
-      <header className="sticky top-0 z-40 bg-black/80 backdrop-blur-md border-b border-gray-800 px-4 py-3 flex justify-between items-center">
-        <div className="flex items-center h-4">
-            <img src="/assets/logo/logo_01.png" alt="Mining Points" className="h-full w-auto object-contain" />
-        </div>
-        <div className="flex items-center gap-3">
-            <button onClick={() => setNotificationsOpen(true)} className="relative hover:text-purple-400 transition-colors">
-                <Bell size={20} className={state.notifications.some(n => !n.read) ? "text-white" : "text-gray-400"} />
-                {state.notifications.some(n => !n.read) && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border-2 border-black"></span>}
-            </button>
-            <div className="relative">
-                <button onClick={() => setView('forum')} className={`relative hover:text-green-400 transition-colors ${view === 'forum' ? 'text-green-400' : 'text-gray-400'}`}>
-                    <Users size={20} />
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>
-                </button>
+      <div className="md:hidden">
+        <div className={`max-w-lg mx-auto min-h-screen ${THEME.bg} shadow-2xl relative border-x border-gray-900`}>
+          <header className="sticky top-0 z-40 bg-black/80 backdrop-blur-md border-b border-gray-800 px-4 py-3 flex justify-between items-center">
+            <div className="flex items-center h-4">
+                <img src="/assets/logo/logo_01.png" alt="Mining Points" className="h-full w-auto object-contain" />
             </div>
-            <div className="relative">
-                <button onClick={() => setProfileOpen(!isProfileOpen)} className="flex items-center gap-2 bg-gray-900 px-2 py-1 rounded-full border border-gray-700 hover:border-purple-500 transition-colors">
+            <div className="flex items-center gap-3">
+                <button onClick={() => setNotificationsOpen(true)} className="relative hover:text-purple-400 transition-colors">
+                    <Bell size={20} className={state.notifications.some(n => !n.read) ? "text-white" : "text-gray-400"} />
+                    {state.notifications.some(n => !n.read) && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border-2 border-black"></span>}
+                </button>
+                <div className="relative">
+                    <button onClick={() => setView('forum')} className={`relative hover:text-green-400 transition-colors ${view === 'forum' ? 'text-green-400' : 'text-gray-400'}`}>
+                        <MessageSquare size={20} />
+                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>
+                    </button>
+                </div>
+                <div className="relative">
+                    <button onClick={() => setProfileOpen(!isProfileOpen)} className="flex items-center gap-2 bg-gray-900 px-2 py-1 rounded-full border border-gray-700 hover:border-purple-500 transition-colors">
+                        <div className="w-6 h-6 bg-gray-700 rounded-full overflow-hidden">
+                          <img
+                            src={getAvatarSrc(state.user.avatar_url)}
+                            alt="avatar"
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = '/assets/persona/mp_p6.svg';
+                            }}
+                          />
+                        </div>
+                        <span className="text-xs font-bold truncate max-w-[60px]">{state.user.username}</span>
+                    </button>
+                    {isProfileOpen && (
+                        <div className="absolute top-full right-0 mt-2 w-48 bg-[#111111] border border-gray-800 rounded-xl shadow-xl z-50 overflow-hidden animate-fadeIn">
+                            <button onClick={() => { setView('menu:config'); setProfileOpen(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-2 border-b border-gray-800"><User size={16} className="text-purple-400" /> {t('menu.myAccount')}</button>
+                            <button 
+                                onClick={async () => { 
+                                    if(window.confirm(t('menu.logoutConfirm'))) { 
+                                        await supabase.auth.signOut();
+                                        localStorage.removeItem('mining_points_mvp_v1'); 
+                                        window.location.href = '/'; 
+                                    }
+                                }} 
+                                className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-900/20 flex items-center gap-2"
+                            >
+                                <LogOut size={16} /> {t('menu.logout')}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+          </header>
+          <main className="pt-2">
+            {view === 'home' && <HomeView navigate={setView} />}
+            {view === 'invest' && <InvestView navigate={setView} />}
+            {view === 'wallet' && <WalletView navigate={setView} />}
+            {view === 'arcade' && <ArcadeView navigate={setView} />}
+            {view === 'forum' && <ForumView navigate={setView} />}
+            {view === 'admin' && (state.user.role === 'admin_master' || state.user.role === 'admin_finance' || state.user.role === 'admin_partner') && <AdminView navigate={setView} />}
+            {view.startsWith('menu') && <MenuView navigate={setView} initialTab={view.split(':')[1] || 'menu'} />}
+          </main>
+          <nav className="fixed bottom-0 left-1/2 transform -translate-x-1/2 w-full max-w-lg bg-[#111111] border-t border-gray-800 backdrop-blur pb-safe z-40">
+            <div className="flex justify-around items-center h-16 relative">
+                <button onClick={() => setView('home')} className={`flex flex-col items-center gap-1 w-1/5 ${view === 'home' ? 'text-purple-500' : 'text-gray-500'}`}><Home size={20} /><span className="text-[10px]">{t('nav.home')}</span></button>
+                <button onClick={() => setView('arcade')} className={`flex flex-col items-center gap-1 w-1/5 ${view === 'arcade' ? 'text-[#39ff14]' : 'text-gray-500'}`}><Gamepad2 size={20} /><span className="text-[10px]">{t('nav.arcade')}</span></button>
+                <div className="relative -top-6"><button onClick={() => setView('invest')} className={`w-14 h-14 rounded-full flex items-center justify-center border-4 border-[#111111] shadow-[0_0_15px_#9333ea] transition-transform active:scale-95 ${view === 'invest' ? 'bg-white text-purple-700' : 'bg-purple-600 text-white'}`}><Zap size={24} fill="currentColor" /></button></div>
+                <button onClick={() => setView('wallet')} className={`flex flex-col items-center gap-1 w-1/5 ${view === 'wallet' ? 'text-purple-500' : 'text-gray-500'}`}><Wallet size={20} /><span className="text-[10px]">{t('nav.wallet')}</span></button>
+                <button onClick={() => setView('menu')} className={`flex flex-col items-center gap-1 w-1/5 ${view.startsWith('menu') ? 'text-purple-500' : 'text-gray-500'}`}><MenuIcon size={20} /><span className="text-[10px]">{t('nav.menu')}</span></button>
+            </div>
+          </nav>
+          <style>{`
+            @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+            .animate-marquee { animation: marquee 20s linear infinite; }
+            .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            .animate-slideUp { animation: slideUp 0.3s ease-out; }
+            @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+            ::-webkit-scrollbar { width: 4px; }
+            ::-webkit-scrollbar-track { background: #000; }
+            ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+          `}</style>
+        </div>
+      </div>
+
+      <div className={`hidden md:flex h-screen ${THEME.bg} overflow-hidden`}>
+        <aside className="w-20 xl:w-64 border-r border-gray-900 bg-[#111111] flex flex-col items-center xl:items-stretch py-6 gap-6 h-screen shrink-0 z-40 overflow-hidden">
+          <div className="px-4 w-full flex items-center justify-center xl:justify-start">
+            <img src="/assets/logo/logo_01.png" alt="Mining Points" className="h-6 w-auto object-contain" />
+          </div>
+          <nav className="mt-2 w-full flex-1 flex flex-col gap-2 px-2 xl:px-4 overflow-y-auto">
+            <button onClick={() => setView('home')} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${view === 'home' ? 'bg-purple-600/20 text-purple-400' : 'text-gray-400 hover:bg-gray-800/60'}`}><Home size={20} /><span className="hidden xl:inline text-sm font-medium">{t('nav.home')}</span></button>
+            <button onClick={() => setView('arcade')} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${view === 'arcade' ? 'bg-green-600/20 text-[#39ff14]' : 'text-gray-400 hover:bg-gray-800/60'}`}><Gamepad2 size={20} /><span className="hidden xl:inline text-sm font-medium">{t('nav.arcade')}</span></button>
+            <button onClick={() => setView('invest')} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${view === 'invest' ? 'bg-purple-600/20 text-purple-400' : 'text-gray-400 hover:bg-gray-800/60'}`}><Zap size={20} /><span className="hidden xl:inline text-sm font-medium">{t('home.upgrade_button')}</span></button>
+            <button onClick={() => setView('wallet')} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${view === 'wallet' ? 'bg-purple-600/20 text-purple-400' : 'text-gray-400 hover:bg-gray-800/60'}`}><Wallet size={20} /><span className="hidden xl:inline text-sm font-medium">{t('nav.wallet')}</span></button>
+            <button onClick={() => setView('menu:team')} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${view === 'menu:team' ? 'bg-purple-600/20 text-purple-400' : 'text-gray-400 hover:bg-gray-800/60'}`}><Users2 size={20} /><span className="hidden xl:inline text-sm font-medium">Equipe</span></button>
+            <button onClick={() => setView('forum')} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${view === 'forum' ? 'bg-green-600/20 text-[#39ff14]' : 'text-gray-400 hover:bg-gray-800/60'}`}><MessageSquare size={20} /><span className="hidden xl:inline text-sm font-medium">Fórum</span></button>
+            <button onClick={() => setView('menu:support')} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${view === 'menu:support' ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:bg-gray-800/60'}`}><Bot size={20} /><span className="hidden xl:inline text-sm font-medium">{t('menu.supportAI')}</span></button>
+            <button onClick={() => setView('menu')} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${((view.startsWith('menu') && view !== 'menu:support' && view !== 'menu:team') || view === 'menu') ? 'bg-purple-600/20 text-purple-400' : 'text-gray-400 hover:bg-gray-800/60'}`}><MenuIcon size={20} /><span className="hidden xl:inline text-sm font-medium">{t('nav.menu')}</span></button>
+          </nav>
+          <div className="w-full px-2 xl:px-4">
+            <button
+              onClick={async () => { 
+                if(window.confirm(t('menu.logoutConfirm'))) { 
+                  await supabase.auth.signOut();
+                  localStorage.removeItem('mining_points_mvp_v1'); 
+                  window.location.href = '/'; 
+                }
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-red-900/20 transition-colors"
+            >
+              <LogOut size={20} />
+              <span className="hidden xl:inline text-sm font-medium">{t('menu.logout')}</span>
+            </button>
+          </div>
+        </aside>
+        <div className="flex-1 h-screen overflow-y-auto bg-[#0a0a0a]">
+          <div className="min-h-full flex justify-center">
+            <div className="w-full max-w-[920px] xl:max-w-[1020px] 2xl:max-w-[1120px] min-h-full bg-gradient-to-b from-[#101010] via-[#0c0c0c] to-[#0a0a0a] border-l border-r border-gray-900/40 shadow-2xl px-4 lg:px-6 xl:px-10 2xl:px-12 pb-12">
+            <header className="sticky top-0 z-30 bg-[#0a0a0a]/90 backdrop-blur-md border-b border-gray-800 flex justify-between items-center -mx-4 lg:-mx-6 xl:-mx-10 2xl:-mx-12 px-4 lg:px-6 xl:px-10 2xl:px-12 py-4 mb-6">
+              <div className="flex items-center h-5">
+                  <img src="/assets/logo/logo_01.png" alt="Mining Points" className="h-full w-auto object-contain opacity-60" />
+              </div>
+              <div className="flex items-center gap-3 relative">
+                  <button onClick={() => setNotificationsOpen(true)} className="relative hover:text-purple-400 transition-colors">
+                      <Bell size={20} className={state.notifications.some(n => !n.read) ? "text-white" : "text-gray-400"} />
+                      {state.notifications.some(n => !n.read) && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border-2 border-black"></span>}
+                  </button>
+                  <div className="relative">
+                      <button onClick={() => setView('forum')} className={`relative hover:text-green-400 transition-colors ${view === 'forum' ? 'text-green-400' : 'text-gray-400'}`}>
+                          <MessageSquare size={20} />
+                          <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>
+                      </button>
+                  </div>
+                  <button onClick={() => setProfileOpen(!isProfileOpen)} className="flex items-center gap-2 bg-gray-900 px-2 py-1 rounded-full border border-gray-700 hover:border-purple-500 transition-colors">
                     <div className="w-6 h-6 bg-gray-700 rounded-full overflow-hidden">
                       <img
                         src={getAvatarSrc(state.user.avatar_url)}
@@ -252,38 +368,42 @@ const Layout = () => {
                         }}
                       />
                     </div>
-                    <span className="text-xs font-bold truncate max-w-[60px]">{state.user.username}</span>
-                </button>
-                {isProfileOpen && (
-                    <div className="absolute top-full right-0 mt-2 w-48 bg-[#111111] border border-gray-800 rounded-xl shadow-xl z-50 overflow-hidden animate-fadeIn">
-                        <button onClick={() => { setView('menu:config'); setProfileOpen(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-2 border-b border-gray-800"><User size={16} className="text-purple-400" /> {t('menu.myAccount')}</button>
-                        <button 
-                            onClick={async () => { 
-                                if(window.confirm(t('menu.logoutConfirm'))) { 
-                                    await supabase.auth.signOut();
-                                    localStorage.removeItem('mining_points_mvp_v1'); 
-                                    window.location.href = '/'; 
-                                }
-                            }} 
-                            className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-900/20 flex items-center gap-2"
-                        >
-                            <LogOut size={16} /> {t('menu.logout')}
-                        </button>
+                    <span className="text-xs font-bold truncate max-w-[120px]">{state.user.username}</span>
+                  </button>
+                  {isProfileOpen && (
+                    <div className="absolute top-full right-0 mt-2 w-56 bg-[#111111] border border-gray-800 rounded-xl shadow-xl z-50 overflow-hidden">
+                      <button onClick={() => { setView('menu:config'); setProfileOpen(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-800 hover:text-white flex items-center gap-2 border-b border-gray-800"><User size={16} className="text-purple-400" /> {t('menu.myAccount')}</button>
+                      <button 
+                        onClick={async () => { 
+                          if(window.confirm(t('menu.logoutConfirm'))) { 
+                            await supabase.auth.signOut();
+                            localStorage.removeItem('mining_points_mvp_v1'); 
+                            window.location.href = '/'; 
+                          }
+                        }} 
+                        className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-900/20 flex items-center gap-2"
+                      >
+                        <LogOut size={16} /> {t('menu.logout')}
+                      </button>
                     </div>
-                )}
-            </div>
+                  )}
+                </div>
+            </header>
+            <main className="pt-0 px-0 xl:px-4">
+              {view === 'home' && <HomeView navigate={setView} />}
+              {view === 'invest' && <InvestView navigate={setView} />}
+              {view === 'wallet' && <WalletView navigate={setView} />}
+              {view === 'arcade' && <ArcadeView navigate={setView} />}
+              {view === 'forum' && <ForumView navigate={setView} />}
+              {view === 'admin' && (state.user.role === 'admin_master' || state.user.role === 'admin_finance' || state.user.role === 'admin_partner') && <AdminView navigate={setView} />}
+              {view.startsWith('menu') && <MenuView navigate={setView} initialTab={view.split(':')[1] || 'menu'} />}
+            </main>
+          </div>
+          </div>
         </div>
-      </header>
-      <main className="pt-2">
-        {view === 'home' && <HomeView navigate={setView} />}
-        {view === 'invest' && <InvestView navigate={setView} />}
-        {view === 'wallet' && <WalletView navigate={setView} />}
-        {view === 'arcade' && <ArcadeView navigate={setView} />}
-        {view === 'forum' && <ForumView navigate={setView} />}
-        {/* Proteção da Rota Admin */}
-        {view === 'admin' && (state.user.role === 'admin_master' || state.user.role === 'admin_finance' || state.user.role === 'admin_partner') && <AdminView navigate={setView} />}
-        {view.startsWith('menu') && <MenuView navigate={setView} initialTab={view.split(':')[1] || 'menu'} />}
-      </main>
+        <div className="hidden md:block w-64 shrink-0 bg-[#111111] border-l border-gray-900 h-screen" />
+      </div>
+
       {isNotificationsOpen && <NotificationsPanel onClose={() => setNotificationsOpen(false)} />}
       {popup && (
         <div className={`fixed top-16 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl z-50 flex items-center gap-3 animate-bounceIn ${popup.type === 'danger' ? 'bg-red-600 text-white' : popup.type === 'success' || popup.type === 'profit' ? 'bg-green-600 text-white' : 'bg-gray-800 text-white border border-gray-600'}`}>
@@ -291,27 +411,6 @@ const Layout = () => {
             <span className="text-sm font-bold">{popup.msg}</span>
         </div>
       )}
-      <nav className="fixed bottom-0 left-1/2 transform -translate-x-1/2 w-full max-w-lg bg-[#111111] border-t border-gray-800 backdrop-blur pb-safe z-40">
-        <div className="flex justify-around items-center h-16 relative">
-            <button onClick={() => setView('home')} className={`flex flex-col items-center gap-1 w-1/5 ${view === 'home' ? 'text-purple-500' : 'text-gray-500'}`}><Home size={20} /><span className="text-[10px]">{t('nav.home')}</span></button>
-            <button onClick={() => setView('arcade')} className={`flex flex-col items-center gap-1 w-1/5 ${view === 'arcade' ? 'text-[#39ff14]' : 'text-gray-500'}`}><Gamepad2 size={20} /><span className="text-[10px]">{t('nav.arcade')}</span></button>
-            <div className="relative -top-6"><button onClick={() => setView('invest')} className={`w-14 h-14 rounded-full flex items-center justify-center border-4 border-[#111111] shadow-[0_0_15px_#9333ea] transition-transform active:scale-95 ${view === 'invest' ? 'bg-white text-purple-700' : 'bg-purple-600 text-white'}`}><Zap size={24} fill="currentColor" /></button></div>
-            <button onClick={() => setView('wallet')} className={`flex flex-col items-center gap-1 w-1/5 ${view === 'wallet' ? 'text-purple-500' : 'text-gray-500'}`}><Wallet size={20} /><span className="text-[10px]">{t('nav.wallet')}</span></button>
-            <button onClick={() => setView('menu')} className={`flex flex-col items-center gap-1 w-1/5 ${view.startsWith('menu') ? 'text-purple-500' : 'text-gray-500'}`}><MenuIcon size={20} /><span className="text-[10px]">{t('nav.menu')}</span></button>
-        </div>
-      </nav>
-      <style>{`
-        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-        .animate-marquee { animation: marquee 20s linear infinite; }
-        .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .animate-slideUp { animation: slideUp 0.3s ease-out; }
-        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: #000; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
-      `}</style>
-      </div>
     </div>
   );
 };
