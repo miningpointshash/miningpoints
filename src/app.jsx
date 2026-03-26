@@ -223,7 +223,7 @@ const Layout = () => {
 
   return (
     <div className={`min-h-screen bg-black font-sans text-gray-200 overflow-x-hidden selection:bg-purple-500 selection:text-white pb-safe`}>
-      <div className="md:hidden">
+      <div className="xl:hidden">
         <div className={`max-w-lg mx-auto min-h-screen ${THEME.bg} shadow-2xl relative border-x border-gray-900`}>
           <header className="sticky top-0 z-40 bg-black/80 backdrop-blur-md border-b border-gray-800 px-4 py-3 flex justify-between items-center">
             <div className="flex items-center h-4">
@@ -307,7 +307,7 @@ const Layout = () => {
         </div>
       </div>
 
-      <div className={`hidden md:flex h-screen ${THEME.bg} overflow-hidden`}>
+      <div className={`hidden xl:flex h-screen ${THEME.bg} overflow-hidden`}>
         <aside className="w-20 xl:w-64 border-r border-gray-900 bg-[#111111] flex flex-col items-center xl:items-stretch py-6 gap-6 h-screen shrink-0 z-40 overflow-hidden">
           <div className="px-4 w-full flex items-center justify-center xl:justify-start">
             <img src="/assets/logo/logo_01.png" alt="Mining Points" className="h-6 w-auto object-contain" />
@@ -401,7 +401,7 @@ const Layout = () => {
           </div>
           </div>
         </div>
-        <div className="hidden md:block w-64 shrink-0 bg-[#111111] border-l border-gray-900 h-screen" />
+        <div className="hidden xl:block w-64 shrink-0 bg-[#111111] border-l border-gray-900 h-screen" />
       </div>
 
       {isNotificationsOpen && <NotificationsPanel onClose={() => setNotificationsOpen(false)} />}

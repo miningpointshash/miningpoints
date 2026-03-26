@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useContext } from 'react';
-import { Clock, Volume2, VolumeX, Trophy } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, Volume2, VolumeX, Trophy } from 'lucide-react';
 import { SoundManager } from '../../utils/soundManager';
 import { Button } from '../ui/Button';
 import { AppContext } from '../../context/AppContext';
@@ -16,6 +16,7 @@ export const PacCryptoGame = ({ onGameOver, onExit }) => {
     const requestRef = useRef();
     const timeLeftRef = useRef(60);
     const touchStartRef = useRef(null);
+    const swipeThreshold = 16;
 
     // Maze Definition: 0 = wall, 1 = dot, 2 = power pill, 3 = empty path
     // Simplified MVP maze: 15 cols x 15 rows
@@ -53,8 +54,8 @@ export const PacCryptoGame = ({ onGameOver, onExit }) => {
         maze: [],
         frameCount: 0,
         powerMode: 0,
-        moveEvery: 8,
-        powerSteps: 24,
+        moveEvery: 9,
+        powerSteps: 28,
         level: 1
     });
 
@@ -179,7 +180,7 @@ export const PacCryptoGame = ({ onGameOver, onExit }) => {
 
                 if (possible.length > 0) {
                     const lvl = Number(state.level || 1);
-                    const preferChase = Math.random() < 0.12 + (lvl - 1) * 0.05;
+                    const preferChase = Math.random() < 0.08 + (lvl - 1) * 0.04;
                     const move = preferChase
                         ? possible.reduce((best, dir) => {
                             const bx = g.x + best.dx;
@@ -207,11 +208,8 @@ export const PacCryptoGame = ({ onGameOver, onExit }) => {
             if (state.powerMode > 0) state.powerMode--;
 
             const elapsed = 60 - Number(timeLeftRef.current || 0);
-            if (elapsed >= 25 && state.ghosts.length < 4) {
+            if (elapsed >= 40 && state.ghosts.length < 4) {
                 state.ghosts.push({ x: 7, y: 7, dx: 0, dy: 1, color: '#22c55e', wait: 90 });
-            }
-            if (elapsed >= 45 && state.ghosts.length < 5) {
-                state.ghosts.push({ x: 7, y: 7, dx: 1, dy: 0, color: '#e879f9', wait: 120 });
             }
 
             let remaining = 0;
@@ -342,8 +340,8 @@ export const PacCryptoGame = ({ onGameOver, onExit }) => {
         ];
         gameData.current.powerMode = 0;
         gameData.current.frameCount = 0;
-        gameData.current.moveEvery = 8;
-        gameData.current.powerSteps = 24;
+        gameData.current.moveEvery = 9;
+        gameData.current.powerSteps = 28;
         
         requestRef.current = requestAnimationFrame(animate);
     };
@@ -362,12 +360,12 @@ export const PacCryptoGame = ({ onGameOver, onExit }) => {
     useEffect(() => {
         timeLeftRef.current = timeLeft;
         const elapsed = 60 - Number(timeLeft || 0);
-        let lvl = 1 + Math.floor(elapsed / 10);
-        lvl = Math.max(1, Math.min(6, lvl));
+        let lvl = 1 + Math.floor(elapsed / 15);
+        lvl = Math.max(1, Math.min(5, lvl));
         setDifficultyLevel(lvl);
         gameData.current.level = lvl;
-        gameData.current.moveEvery = Math.max(6, 11 - lvl);
-        gameData.current.powerSteps = Math.max(10, 26 - lvl * 2);
+        gameData.current.moveEvery = Math.max(7, 12 - lvl);
+        gameData.current.powerSteps = Math.max(14, 30 - lvl * 3);
 
         let interval;
         if (gameState === 'playing' && timeLeft > 0) {
@@ -416,7 +414,7 @@ export const PacCryptoGame = ({ onGameOver, onExit }) => {
         const dy = touch.clientY - touchStartRef.current.y;
         
         // Require minimum swipe distance
-        if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
+        if (Math.abs(dx) > swipeThreshold || Math.abs(dy) > swipeThreshold) {
             const p = gameData.current.player;
             if (Math.abs(dx) > Math.abs(dy)) {
                 p.nextDx = dx > 0 ? 1 : -1;
@@ -431,6 +429,13 @@ export const PacCryptoGame = ({ onGameOver, onExit }) => {
 
     const handleTouchEnd = () => {
         touchStartRef.current = null;
+    };
+
+    const setPlayerDirection = (dx, dy) => {
+        if (gameState !== 'playing') return;
+        const p = gameData.current.player;
+        p.nextDx = dx;
+        p.nextDy = dy;
     };
 
     return (
@@ -498,6 +503,32 @@ export const PacCryptoGame = ({ onGameOver, onExit }) => {
                         </div>
                     )}
                 </div>
+                
+                {gameState === 'playing' && (
+                    <div className="xl:hidden px-4 py-3">
+                        <div className="mx-auto w-[200px]">
+                            <div className="grid grid-cols-3 gap-2 place-items-center">
+                                <div />
+                                <button onClick={() => setPlayerDirection(0, -1)} className="w-12 h-12 rounded-xl bg-black/60 border border-gray-700 text-white flex items-center justify-center active:scale-95">
+                                    <ArrowUp size={18} />
+                                </button>
+                                <div />
+                                <button onClick={() => setPlayerDirection(-1, 0)} className="w-12 h-12 rounded-xl bg-black/60 border border-gray-700 text-white flex items-center justify-center active:scale-95">
+                                    <ArrowLeft size={18} />
+                                </button>
+                                <div />
+                                <button onClick={() => setPlayerDirection(1, 0)} className="w-12 h-12 rounded-xl bg-black/60 border border-gray-700 text-white flex items-center justify-center active:scale-95">
+                                    <ArrowRight size={18} />
+                                </button>
+                                <div className="col-span-3 flex justify-center">
+                                    <button onClick={() => setPlayerDirection(0, 1)} className="w-12 h-12 rounded-xl bg-black/60 border border-gray-700 text-white flex items-center justify-center active:scale-95">
+                                        <ArrowDown size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
             
             <p className="text-gray-500 text-xs mt-4 animate-pulse text-center whitespace-pre-line">
